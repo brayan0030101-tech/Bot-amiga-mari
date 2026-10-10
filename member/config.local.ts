@@ -3,7 +3,7 @@
 
 export const memberConfig = {
   businessName: "Viventa",
-  botName: "Maricela",
+  botName: "PENDIENTE",
   language: "es" as "es" | "en" | "pt",
   tier: "pro" as "free" | "pro",
   timezone: "America/Bogota",
@@ -19,7 +19,7 @@ export const businessConfig = {
   services: [] as { name: string; price: number }[],
   location: "Oficinas en Miami, Madrid (cita previa), New York y New Jersey; proyectos en varias ciudades de Colombia",
   paymentMethods: ["tarjeta (se envía factura)"] as string[],
-  contactPhone: "+34 611 688 609",
+  contactPhone: "",
   customFields: {
   "queHacemos": "más de 20 años acompañando a colombianos en el exterior a comprar y financiar vivienda en Colombia (apartamentos, casas, preconstrucción, vivienda usada)",
   "ofrecemos": "Estudio de Viabilidad Financiera USD 45 (no reembolsable); Servicio Viventa de acompañamiento completo USD 450 (Europa 505€, EEUU 495 USD, reembolsable si el crédito es negado cumpliendo condiciones); proyectos desde 228 millones hasta más de 1100 millones COP en Bogotá, Cali, Barranquilla, Pereira, Cartagena, Manizales, Zipaquirá, Rionegro, La Estrella y Santa Marta",

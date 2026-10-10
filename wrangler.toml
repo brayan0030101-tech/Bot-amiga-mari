@@ -4,7 +4,7 @@
 # así ningún placeholder rompe `wrangler login` ni el parseo del toml.
 # DO NOT commit member-specific values to git.
 
-name = "forja-inmobiliaria-8664f4"
+name = "forja-amiga-mari"
 main = "src/index.ts"
 compatibility_date = "2026-05-01"
 compatibility_flags = ["nodejs_compat"]
@@ -46,12 +46,12 @@ new_sqlite_classes = ["SupportAgent"]
 # en la misma cuenta de Cloudflare NUNCA compartan datos (settings/persona).
 [[d1_databases]]
 binding = "DB"
-database_name = "horizontes_bot_inmobiliaria_8664f4_db"
-database_id = "94666184-7394-42b1-8d68-445fc9a1d303"
+database_name = "horizontes_bot_amiga_mari_db"
+database_id = "{{D1_DATABASE_ID}}"  # PENDIENTE: crear con `wrangler d1 create horizontes_bot_amiga_mari_db` (NO reutilizar el de Viventa)
 
 [[vectorize]]
 binding = "KB"
-index_name = "horizontes_bot_inmobiliaria_8664f4_kb"
+index_name = "horizontes_bot_amiga_mari_kb"
 
 # R2 (OPCIONAL) — solo para lead magnets / catálogo con archivos. R2 pide tarjeta
 # en Cloudflare (aunque el uso sea $0), así que va COMENTADO por default: el bot
@@ -69,11 +69,11 @@ index_name = "horizontes_bot_inmobiliaria_8664f4_kb"
 # bucket_name = "horizontes-bot-media"
 
 [vars]
-BOT_NAME = "Maricela"
-BUSINESS_NAME = "Viventa"
+BOT_NAME = "{{BOT_NAME}}"  # PENDIENTE: nombre del bot / asesora
+BUSINESS_NAME = "Viventa"  # PENDIENTE: confirmar cómo se presenta la asesora
 BOT_LANGUAGE = "es-MX"
 BOT_TIMEZONE = "Europe/Madrid"  # zona horaria para resolver fechas ("mañana", "el jueves 27")
-CALCOM_EVENT_TYPE_ID = "7227219"  # tipo de evento "Videollamada Viventa" (15 min) en el Cal.com de Maricela
+# CALCOM_EVENT_TYPE_ID = ""  # PENDIENTE: agenda de la nueva asesora (no usar el 7227219, es de Maricela)
 CALCOM_TIMEZONE = "Europe/Madrid"
 BOT_TIER = "pro"  # 'free' | 'pro'
 LLM_PROVIDER = "anthropic"
@@ -104,8 +104,8 @@ BOT_NICHE = "inmobiliaria"  # el CLI lo reescribe al giro instalado (restaurante
 BUFFER_SECONDS = "15"
 # Se llena solo: `forjabot pair` escribe aquí la URL real del worker tras el deploy;
 # y en runtime el bot cae a su propio origin si está vacío (sin edición manual).
-DASHBOARD_BASE_URL = "https://forja-inmobiliaria-8664f4.brayan0030101.workers.dev"
-YCLOUD_WA_FROM = "+34611688609"
+DASHBOARD_BASE_URL = ""  # se llena tras el primer deploy / `forjabot pair`
+# YCLOUD_WA_FROM = ""  # PENDIENTE: número de WhatsApp de la nueva asesora (NO el +34611688609 de Viventa)
 
 # Si TODAS las respuestas de tu bot fallan con 403 "Request not allowed" hacia
 # api.anthropic.com (típico cuando el proveedor del canal manda sus webhooks
