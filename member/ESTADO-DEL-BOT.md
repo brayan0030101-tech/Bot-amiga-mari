@@ -18,14 +18,14 @@ datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 ## Pendiente (Brayan aún no lo define)
 1. Nombre de la asesora y del bot, nombre del negocio y cómo se presenta (`BOT_NAME`, `BUSINESS_NAME`, `member/config.local.ts`).
 2. Número de WhatsApp y proveedor, y su webhook.
-3. Agenda (Cal.com, horario, duración) y **zona horaria**.
+3. Agenda (Cal.com, horario, duración).
 4. Ids de Telegram de quienes reciben los avisos.
 5. Si usa formulario/CRM/Excel (hoy el código trae un resumen diario, CSV y formulario pensados para otro CRM; se activan solo con ajustes en D1).
 6. Reglas del bot (`custom_instructions`, viven en D1, no en git): escribirlas para esta asesora.
 
 
 ## Zona horaria
-Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00/14:00, recordatorios) salen de `BOT_TIMEZONE` en `wrangler.toml`. Falta fijarla con la real.
+Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00/14:00, recordatorios) salen de `BOT_TIMEZONE` en `wrangler.toml`. Decidido: **Europe/Madrid** (la misma que usa el bot de referencia), en `BOT_TIMEZONE`, `CALCOM_TIMEZONE` y `member/config.local.ts`.
 
 ## Antes del primer deploy
 - `wrangler.toml` tiene `{{D1_DATABASE_ID}}` y `{{BOT_NAME}}`: el preflight bloquea el deploy hasta resolverlos.

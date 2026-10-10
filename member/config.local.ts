@@ -6,7 +6,7 @@ export const memberConfig = {
   botName: "PENDIENTE",
   language: "es" as "es" | "en" | "pt",
   tier: "pro" as "free" | "pro",
-  timezone: "America/Bogota", // PENDIENTE: confirmar
+  timezone: "Europe/Madrid",
   // Moneda con la que el bot habla de precios ($ | € | R$). El bot la lee de
   // aquí si no la cambiaste en el panel (setting bot_currency manda si existe).
   currency: "$",
