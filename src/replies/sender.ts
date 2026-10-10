@@ -145,12 +145,11 @@ async function resolverMedia(pedidas: MediaPedida[], env: Env): Promise<ReplyMed
   }
 }
 
-// ── Foto de proyecto (inmobiliaria Viventa) ──────────────────────────────────
+// ── Foto de proyecto (inmobiliaria) ──────────────────────────────────
 // El modelo referencia el proyecto por ciudad (y barrio opcional), tal como
 // aparecen en el título que le devolvió searchKb — nunca por id ni por URL:
 //   [[foto_proyecto: Medellín | Poblado]]
-// Se resuelve contra project_photos (poblada por el importador automático de
-// viventa.co/proyectos, src/kb/importViventaProyectos.ts). Un match inventado
+// Se resuelve contra project_photos (poblada con los proyectos del negocio). Un match inventado
 // o inexistente se descarta en silencio, igual que un id de Galería inventado.
 // Independiente de la Galería: no ensucia esa lista ni el panel del dueño.
 const FOTO_PROYECTO_RE = /\[\[\s*foto_proyecto\s*:\s*([^|\]]{2,80})(?:\s*\|\s*([^\]]{1,80}))?\s*\]\]/gi;

@@ -14,7 +14,7 @@ import { chunkReply } from "../replies/chunker";
  * vez por cita (metadata.recordatorioEnviadoEn evita duplicados).
  *
  * Las videollamadas ya NO pasan por aquí: tienen recordatorios a 24 h y 1 h
- * (followup/sistemaViventa.ts). Esto queda para el Outlet.
+ * (followup/sistemaAtencion.ts). Esto queda para el Outlet.
  *
  * Corre desde el cron frecuente (cada 5 min) pero gateado a UNA franja
  * horaria del día — ver index.ts — así en la práctica dispara una vez por día.

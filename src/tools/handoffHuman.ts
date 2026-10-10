@@ -66,26 +66,26 @@ export async function createHandoffTicket(
   // and, because this is a business-INITIATED message outside any 24h
   // session window, MUST use a pre-approved Content Template (HSM) — free
   // text would be rejected by WhatsApp. Both are best-effort.
-  const { origenCliente } = await import("../lib/camila");
+  const { origenCliente } = await import("../lib/equipo");
   const origen = await origenCliente(db, conversationId);
   await notifyOwner(env, { reason, summary, ticketId, origen });
 
-  // Viventa: Camila (equipo comercial) recibe cada traspaso con la ficha del
-  // lead. Best-effort y sin efecto si CAMILA_* no está configurado.
+  // la empresa: el equipo (equipo comercial) recibe cada traspaso con la ficha del
+  // lead. Best-effort y sin efecto si EQUIPO_* no está configurado.
   try {
-    const { camilaConfigured, notifyCamila, leadFicha } = await import("../lib/camila");
-    if (camilaConfigured(env)) {
+    const { equipoConfigured, notifyEquipo, leadFicha } = await import("../lib/equipo");
+    if (equipoConfigured(env)) {
       const ficha = await leadFicha(db, conversationId);
       const { enlaceRegistro } = await import("../followup/resumenDia");
       const enlace = await enlaceRegistro(env, db, conversationId);
-      await notifyCamila(env, {
+      await notifyEquipo(env, {
         heading: `📥 Traspaso [${reason}]`,
         body: `${origen ? `${origen}\n` : ""}${summary}\n\n${ficha}${enlace ? `\n\n${enlace}` : ""}`,
         url: `${await selfOrigin(env)}/admin/tickets`,
       });
     }
   } catch (e) {
-    console.error("[handoffHuman] aviso a Camila falló:", e);
+    console.error("[handoffHuman] aviso a el equipo falló:", e);
   }
 
   // Ping a la app móvil (Forja Inbox) — mismo espíritu que notifyOwner: aviso

@@ -196,9 +196,9 @@ describe("normalizeYCloudEvents", () => {
 });
 
 describe("filtro por número (cuenta de YCloud compartida con otro bot)", () => {
-  const VIVENTA = "+34611688609";
+  const NUMERO_BOT = "+34600000000";
   const OTRO = "+34603039032";
-  const envNum = { ...env, YCLOUD_WA_FROM: VIVENTA } as any;
+  const envNum = { ...env, YCLOUD_WA_FROM: NUMERO_BOT } as any;
   const msg = (to: string) =>
     inbound({ id: "id9", wamid: "wamid.9", from: "+57 300 123 4567", to, type: "text", text: { body: "hola" } }) as any;
   const eco = (from: string) =>
@@ -217,9 +217,9 @@ describe("filtro por número (cuenta de YCloud compartida con otro bot)", () => 
     expect(await parseYCloudEvents(msg(OTRO), envNum, ORIGIN)).toHaveLength(0);
   });
 
-  it("(b) un mensaje dirigido al número de Viventa se procesa (con cualquier formato)", async () => {
-    expect(await parseYCloudEvents(msg(VIVENTA), envNum, ORIGIN)).toHaveLength(1);
-    expect(await parseYCloudEvents(msg("+34 611-688-609"), envNum, ORIGIN)).toHaveLength(1);
+  it("(b) un mensaje dirigido al número del bot se procesa (con cualquier formato)", async () => {
+    expect(await parseYCloudEvents(msg(NUMERO_BOT), envNum, ORIGIN)).toHaveLength(1);
+    expect(await parseYCloudEvents(msg("+34 600-000-000"), envNum, ORIGIN)).toHaveLength(1);
   });
 
   it("(c) un eco cuyo from es el otro número no pausa nada ni toca la base", async () => {
@@ -229,15 +229,15 @@ describe("filtro por número (cuenta de YCloud compartida con otro bot)", () => 
     expect(setPausedUntil).not.toHaveBeenCalled();
   });
 
-  it("(d) un eco del número de Viventa sí pausa", async () => {
-    const paused = await ycloudOwnerTakeover(eco(VIVENTA), envNum, ORIGIN);
+  it("(d) un eco del número del bot sí pausa", async () => {
+    const paused = await ycloudOwnerTakeover(eco(NUMERO_BOT), envNum, ORIGIN);
     expect(paused).toBe(true);
     expect(setPausedUntil).toHaveBeenCalledTimes(1);
   });
 
   it("isForThisNumber compara solo dígitos y deja pasar si falta algún número", () => {
-    expect(isForThisNumber("+34 611 688 609", envNum)).toBe(true);
-    expect(isForThisNumber("34611688609", envNum)).toBe(true);
+    expect(isForThisNumber("+34 600 000 000", envNum)).toBe(true);
+    expect(isForThisNumber("34600000000", envNum)).toBe(true);
     expect(isForThisNumber(OTRO, envNum)).toBe(false);
     expect(isForThisNumber(undefined, envNum)).toBe(true);
     expect(isForThisNumber("", envNum)).toBe(true);

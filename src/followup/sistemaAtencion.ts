@@ -1,23 +1,23 @@
 /**
- * Sistema de atención Viventa — automatismos del embudo (cron cada 5 min):
+ * Sistema de atención — automatismos del embudo (cron cada 5 min):
  *
  *  1. Seguimiento del guion: si un lead dejó de responder en medio del guion de
- *     calificación, UN solo recordatorio suave + aviso a Camila. Se manda entre
+ *     calificación, UN solo recordatorio suave + aviso a el equipo. Se manda entre
  *     las 20 h y las 23,5 h del último mensaje del cliente (no a las 24 h justas:
  *     la ventana de WhatsApp se cierra a las 24 h y el texto libre rebotaría).
- *  2. Seguimiento de proyectos: Camila envía los proyectos desde su app (queda
+ *  2. Seguimiento de proyectos: el equipo envía los proyectos desde su app (queda
  *     como mensaje "owner" tras el traspaso "Lead calificado"). Si el lead no
- *     responde en 48 h, UN seguimiento suave + aviso a Camila. A esa altura la
+ *     responde en 48 h, UN seguimiento suave + aviso a el equipo. A esa altura la
  *     ventana de 24 h ya está cerrada: en WhatsApp necesita plantilla aprobada
- *     (setting viventa_tpl_seguimiento); sin ella no se envía y se avisa.
- *  3. Videollamada con Maricela: recordatorio al cliente 24 h y 1 h antes (hora
- *     de España) y resumen del lead para Maricela 1 h antes. Las citas salen de
+ *     (setting bot_tpl_seguimiento); sin ella no se envía y se avisa.
+ *  3. Videollamada con la asesora: recordatorio al cliente 24 h y 1 h antes (hora
+ *     de España) y resumen del lead para la asesora 1 h antes. Las citas salen de
  *     los leads "Cita ·" reservados en Cal.com (metadata.calStart, instante exacto).
  *  4. Teléfono de Instagram: Instagram no entrega el número. A quien escribió por
- *     Instagram y no lo ha dado, UN mensaje (texto de Maricela) pidiéndolo y la
+ *     Instagram y no lo ha dado, UN mensaje (texto de la asesora) pidiéndolo y la
  *     hora para llamarle; así ella puede escribirle por WhatsApp. Solo dentro de
  *     la ventana de 24 h de Instagram y en horario de España.
- *  5. Datos que faltan para el formulario de Zoho: a quien ya terminó el guion y le
+ *  5. Datos que faltan para el formulario de registro: a quien ya terminó el guion y le
  *     falta apellido, correo, teléfono o ciudades, UN mensaje pidiendo solo eso.
  *
  * Todos reclaman antes de enviar (marca en metadata) → imposible duplicar.
@@ -30,7 +30,7 @@ import { ConversationsRepo } from "../db/conversations";
 import { SettingsRepo } from "../db/settings";
 import { botTimezone } from "../time/dateAnchor";
 import { selfOrigin } from "../lib/self-origin";
-import { camilaConfigured, notifyCamila, leadFicha } from "../lib/camila";
+import { equipoConfigured, notifyEquipo, leadFicha } from "../lib/equipo";
 import { messageOwner } from "../tools/handoffHuman";
 import { sendOutbound } from "./send";
 import { sendYCloudTemplate } from "../channels/ycloud";
@@ -40,9 +40,9 @@ const MIN = 60_000;
 /** Ventana de servicio de WhatsApp con 5 min de margen. */
 const WINDOW_MS = 24 * H - 5 * MIN;
 
-export const TPL_SEGUIMIENTO = "viventa_tpl_seguimiento";
-export const TPL_RECORDATORIO = "viventa_tpl_recordatorio";
-const TPL_LANG = "viventa_tpl_lang";
+export const TPL_SEGUIMIENTO = "bot_tpl_seguimiento";
+export const TPL_RECORDATORIO = "bot_tpl_recordatorio";
+const TPL_LANG = "bot_tpl_lang";
 
 interface ConvRef {
   id: string;
@@ -117,7 +117,7 @@ async function enviarACliente(
 
 async function avisarEquipo(env: Env, heading: string, body: string): Promise<void> {
   const url = `${await selfOrigin(env)}/admin`;
-  await notifyCamila(env, { heading, body, url }).catch(() => false);
+  await notifyEquipo(env, { heading, body, url }).catch(() => false);
 }
 
 // ─── 1. Seguimiento del guion (≈24 h sin respuesta) ────────────────────────────
@@ -145,8 +145,8 @@ export async function runGuionSeguimiento(env: Env, now = Date.now()): Promise<{
         AND c.channel IN ('ycloud', 'zernio')
         AND c.open_ticket_id IS NULL
         AND (c.paused_until IS NULL OR c.paused_until < ?)
-        AND json_extract(COALESCE(c.metadata, '{}'), '$.viventa_guion24') IS NULL
-        AND json_extract(COALESCE(c.metadata, '{}'), '$.viventa_pidetel') IS NULL`,
+        AND json_extract(COALESCE(c.metadata, '{}'), '$.bot_guion24') IS NULL
+        AND json_extract(COALESCE(c.metadata, '{}'), '$.bot_pidetel') IS NULL`,
     [now - 30 * H, now],
   );
   if (convs.length === 0) return { sent: 0 };
@@ -180,12 +180,12 @@ export async function runGuionSeguimiento(env: Env, now = Date.now()): Promise<{
     if (c.last_role !== "assistant" || c.last_user_at == null) continue;
     const idle = now - c.last_user_at;
     if (idle < 20 * H || idle > 23.5 * H) continue;
-    if (!(await claim(db, "conversations", c.id, "viventa_guion24", now))) continue;
+    if (!(await claim(db, "conversations", c.id, "bot_guion24", now))) continue;
 
     const nombre = primerNombre(c.display_name);
     const text =
       `Hola${nombre ? ` ${nombre}` : ""} 😊 ¿Seguimos con las preguntas? ` +
-      `Me faltan pocas para que el equipo comercial de Maricela pueda orientarte mejor.`;
+      `Me faltan pocas para que nuestro equipo comercial pueda orientarte mejor.`;
     try {
       await enviarACliente(env, db, c, text, null, c.last_user_at, now);
       sent++;
@@ -195,7 +195,7 @@ export async function runGuionSeguimiento(env: Env, now = Date.now()): Promise<{
         `${nombre || c.channel_user_id} no respondió en ~24 h durante las preguntas. Le mandé un recordatorio suave.\n\n${await leadFicha(db, c.id)}`,
       );
     } catch (e) {
-      console.error(`[sistemaViventa] seguimiento guion ${c.id}:`, e);
+      console.error(`[sistemaAtencion] seguimiento guion ${c.id}:`, e);
     }
   }
   return { sent };
@@ -225,7 +225,7 @@ export async function runSeguimientoProyectos(env: Env, now = Date.now()): Promi
       [tk.conversation_id],
     );
     if (!conv || (conv.channel !== "ycloud" && conv.channel !== "zernio")) continue;
-    if (/"viventa_proy48"/.test(conv.metadata ?? "")) continue;
+    if (/"bot_proy48"/.test(conv.metadata ?? "")) continue;
     const proy = await db.first<{ t: number | null }>(
       "SELECT MIN(created_at) AS t FROM messages WHERE conversation_id = ? AND created_at > ? AND role = 'owner'",
       [conv.id, tk.t],
@@ -252,12 +252,12 @@ export async function runSeguimientoProyectos(env: Env, now = Date.now()): Promi
     const desde = now - c.projects_at;
     if (desde < 48 * H || desde > 7 * 24 * H) continue;
     if (c.last_user_at != null && c.last_user_at > c.projects_at) continue; // ya respondió
-    if (!(await claim(db, "conversations", c.id, "viventa_proy48", now))) continue;
+    if (!(await claim(db, "conversations", c.id, "bot_proy48", now))) continue;
 
     const nombre = primerNombre(c.display_name);
     const text =
       `Hola${nombre ? ` ${nombre}` : ""} 😊 Te escribo para saber si pudiste revisar las opciones de proyectos que te enviamos. ` +
-      `¿Te quedó alguna duda o quieres que agendemos tu videollamada con Maricela?`;
+      `¿Te quedó alguna duda o quieres que agendemos tu videollamada con nuestra asesora?`;
     try {
       const via = await enviarACliente(env, db, c, text, { setting: TPL_SEGUIMIENTO, params: [nombre || "hola"] }, c.last_user_at, now);
       sent++;
@@ -275,14 +275,14 @@ export async function runSeguimientoProyectos(env: Env, now = Date.now()): Promi
           `${nombre || c.channel_user_id} no respondió en 48 h tras los proyectos, pero WhatsApp ya cerró la ventana de 24 h y falta la plantilla aprobada de seguimiento. Escríbele tú, por favor.\n\n${await leadFicha(db, c.id)}`,
         );
       } else {
-        console.error(`[sistemaViventa] seguimiento proyectos ${c.id}:`, e);
+        console.error(`[sistemaAtencion] seguimiento proyectos ${c.id}:`, e);
       }
     }
   }
   return { sent, sinPlantilla };
 }
 
-// ─── 3. Videollamada: recordatorios 24 h / 1 h y resumen para Maricela ─────────
+// ─── 3. Videollamada: recordatorios 24 h / 1 h y resumen para la asesora ─────────
 
 interface CitaRow {
   id: string;
@@ -330,8 +330,8 @@ export async function runRecordatoriosLlamada(
     const nombre = primerNombre(lead.name, conv?.display_name);
     const hora = horaEs(inicio, tz);
 
-    // Resumen del lead para Maricela, ~1 h antes (entre 70 y 10 min).
-    if (falta <= 70 * MIN && falta > 10 * MIN && (await claim(db, "leads", lead.id, "viventa_resumen", now))) {
+    // Resumen del lead para la asesora, ~1 h antes (entre 70 y 10 min).
+    if (falta <= 70 * MIN && falta > 10 * MIN && (await claim(db, "leads", lead.id, "bot_resumen", now))) {
       try {
         const ficha = await leadFicha(db, lead.conversation_id);
         const aviso = {
@@ -339,13 +339,13 @@ export async function runRecordatoriosLlamada(
           body: `Cliente: ${nombre || "(sin nombre)"}\nFecha: ${fechaEs(inicio, tz)}\n\n${ficha}`,
           url: `${await selfOrigin(env)}/admin`,
         };
-        // El resumen es para Maricela (y Camila): van al equipo comercial; si no
+        // El resumen es para la asesora (y el equipo): van al equipo comercial; si no
         // hay equipo configurado, al dueño como antes.
-        if (camilaConfigured(env)) await notifyCamila(env, aviso);
+        if (equipoConfigured(env)) await notifyEquipo(env, aviso);
         else await messageOwner(env, aviso);
         out.resumenes++;
       } catch (e) {
-        console.error(`[sistemaViventa] resumen ${lead.id}:`, e);
+        console.error(`[sistemaAtencion] resumen ${lead.id}:`, e);
       }
     }
 
@@ -353,9 +353,9 @@ export async function runRecordatoriosLlamada(
     const ref: ConvRef = { id: conv.id, channel: conv.channel, channel_user_id: conv.channel_user_id, display_name: conv.display_name };
 
     // Recordatorio 24 h: solo si la cita se agendó con ≥ 24 h de antelación.
-    if (falta <= 24 * H && falta > 2 * H && lead.created_at <= inicio - 24 * H && (await claim(db, "leads", lead.id, "viventa_r24", now))) {
+    if (falta <= 24 * H && falta > 2 * H && lead.created_at <= inicio - 24 * H && (await claim(db, "leads", lead.id, "bot_r24", now))) {
       const text =
-        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 Te recuerdo que mañana tienes tu videollamada con Maricela a las ${hora} (hora de España). ` +
+        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 Te recuerdo que mañana tienes tu videollamada con nuestra asesora a las ${hora} (hora de España). ` +
         `¿Sigue en pie, o prefieres reprogramarla?`;
       try {
         await enviarACliente(env, db, ref, text, { setting: TPL_RECORDATORIO, params: [nombre || "hola", hora] }, lastUser, now);
@@ -366,9 +366,9 @@ export async function runRecordatoriosLlamada(
     }
 
     // Recordatorio 1 h antes.
-    if (falta <= H && lead.created_at <= inicio - H && (await claim(db, "leads", lead.id, "viventa_r1", now))) {
+    if (falta <= H && lead.created_at <= inicio - H && (await claim(db, "leads", lead.id, "bot_r1", now))) {
       const text =
-        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 En una hora, a las ${hora} (hora de España), es tu videollamada con Maricela. ¡Te esperamos!`;
+        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 En una hora, a las ${hora} (hora de España), es tu videollamada con nuestra asesora. ¡Te esperamos!`;
       try {
         await enviarACliente(env, db, ref, text, { setting: TPL_RECORDATORIO, params: [nombre || "hola", hora] }, lastUser, now);
         out.r1++;
@@ -385,7 +385,7 @@ async function falloRecordatorio(env: Env, cuando: string, quien: string, hora: 
     (e as Error).message === "sin_plantilla"
       ? "WhatsApp ya cerró la ventana de 24 h y falta la plantilla aprobada de recordatorio"
       : String((e as Error).message ?? e);
-  console.error(`[sistemaViventa] recordatorio ${cuando} a ${quien}: ${motivo}`);
+  console.error(`[sistemaAtencion] recordatorio ${cuando} a ${quien}: ${motivo}`);
   await messageOwner(env, {
     heading: `⚠️ Recordatorio de ${cuando} NO enviado`,
     body: `Cliente: ${quien}\nVideollamada a las ${hora} (hora de España)\nMotivo: ${motivo}.\nAvísale tú, por favor.`,
@@ -396,7 +396,7 @@ async function falloRecordatorio(env: Env, cuando: string, quien: string, hora: 
 /** Corre los tres automatismos; cada uno es independiente. */
 // ─── 4. Pedir el teléfono a quien escribió por Instagram ───────────────────────
 
-/** Texto de Maricela (sin cambios) para pedir el número y la hora de la llamada. */
+/** Texto de la asesora (sin cambios) para pedir el número y la hora de la llamada. */
 export const TEXTO_PEDIR_TELEFONO =
   "Hola 😊 Muchas gracias por escribirme y por tu interés en comprar vivienda en Colombia 🇨🇴🏡.\n\n" +
   "Quiero llamarte mañana para conocerte mejor, resolver tus dudas y orientarte sobre las opciones disponibles.\n\n" +
@@ -425,8 +425,8 @@ export async function runPedirTelefono(env: Env, now = Date.now()): Promise<{ se
       WHERE c.last_message_at > ?
         AND c.channel = 'zernio'
         AND (c.paused_until IS NULL OR c.paused_until < ?)
-        AND json_extract(COALESCE(c.metadata, '{}'), '$.viventa_pidetel') IS NULL
-        AND json_extract(COALESCE(c.metadata, '{}'), '$.viventa_guion24') IS NULL`,
+        AND json_extract(COALESCE(c.metadata, '{}'), '$.bot_pidetel') IS NULL
+        AND json_extract(COALESCE(c.metadata, '{}'), '$.bot_guion24') IS NULL`,
     [now - 30 * H, now],
   );
   if (convs.length === 0) return { sent: 0 };
@@ -473,12 +473,12 @@ export async function runPedirTelefono(env: Env, now = Date.now()): Promise<{ se
   for (const c of candidatos) {
     if (conTelefono.has(c.id)) continue;
     if (sent >= MAX_POR_PASADA_TEL) break;
-    if (!(await claim(db, "conversations", c.id, "viventa_pidetel", now))) continue;
+    if (!(await claim(db, "conversations", c.id, "bot_pidetel", now))) continue;
     try {
       await enviarACliente(env, db, c, TEXTO_PEDIR_TELEFONO, null, porConv.get(c.id)?.lastUser ?? null, now);
       sent++;
     } catch (e) {
-      console.error(`[sistemaViventa] pedir teléfono ${c.id}:`, e);
+      console.error(`[sistemaAtencion] pedir teléfono ${c.id}:`, e);
     }
   }
   if (sent > 0) {
@@ -501,7 +501,7 @@ export function textoPedirDatos(nombre: string, faltan: string[]): string {
   const items = faltan.map((f) => PIDE[f] ?? f);
   const lista = items.length > 1 ? `${items.slice(0, -1).join(", ")} y ${items[items.length - 1]}` : items[0];
   return (
-    `Hola${nombre ? ` ${nombre}` : ""} 😊 Para dejar registrada tu solicitud con el equipo comercial de Maricela ` +
+    `Hola${nombre ? ` ${nombre}` : ""} 😊 Para dejar registrada tu solicitud con nuestro equipo comercial ` +
     `me falta confirmar ${lista}. ¿Me lo compartes por aquí, por favor?`
   );
 }
@@ -529,14 +529,14 @@ export async function runPedirDatos(env: Env, now = Date.now()): Promise<{ sent:
 
   // Ya se les pidió y completaron lo que faltaba → aviso inmediato con el enlace listo.
   for (const { conv, lead } of todos) {
-    if (!marca(conv.metadata, "viventa_pidedatos") || marca(conv.metadata, "viventa_completo")) continue;
+    if (!marca(conv.metadata, "bot_pidedatos") || marca(conv.metadata, "bot_completo")) continue;
     if (faltantes(lead).length > 0) continue;
-    if (!(await claim(db, "conversations", conv.id, "viventa_completo", now))) continue;
+    if (!(await claim(db, "conversations", conv.id, "bot_completo", now))) continue;
     await avisarEquipo(env, "✅ Cliente completó sus datos", `${lead.nombre} ya respondió. Listo para registrar.\n\n${await enlaceRegistro(env, db, conv.id)}`);
   }
 
   if (!enHorario) return { sent: 0 };
-  const pend = todos.filter(({ conv }) => !marca(conv.metadata, "viventa_pidedatos"));
+  const pend = todos.filter(({ conv }) => !marca(conv.metadata, "bot_pidedatos"));
   if (pend.length === 0) return { sent: 0 };
 
   const ids = pend.map((p) => p.conv.id);
@@ -562,31 +562,31 @@ export async function runPedirDatos(env: Env, now = Date.now()): Promise<{ sent:
     let falta = faltantes(lead);
     let yaPidioTel = false;
     try {
-      yaPidioTel = Boolean(JSON.parse(conv.metadata ?? "{}").viventa_pidetel);
+      yaPidioTel = Boolean(JSON.parse(conv.metadata ?? "{}").bot_pidetel);
     } catch { /* metadata rota */ }
     if (yaPidioTel) falta = falta.filter((f) => f !== "teléfono");
     if (falta.length === 0) continue;
-    if (!(await claim(db, "conversations", conv.id, "viventa_pidedatos", now))) continue;
+    if (!(await claim(db, "conversations", conv.id, "bot_pidedatos", now))) continue;
     try {
       await enviarACliente(env, db, conv, textoPedirDatos(primerNombre(lead.nombre, conv.display_name), falta), null, u.user, now);
       sent++;
     } catch (e) {
-      console.error(`[sistemaViventa] pedir datos ${conv.id}:`, e);
+      console.error(`[sistemaAtencion] pedir datos ${conv.id}:`, e);
     }
   }
   if (sent > 0) {
-    await avisarEquipo(env, "📝 Pedí datos que faltaban", `Le escribí a ${sent} cliente(s) para completar lo que exige el formulario de Zoho. Cuando respondan, el aviso con el enlace listo les llega a Camila y Maricela.`);
+    await avisarEquipo(env, "📝 Pedí datos que faltaban", `Le escribí a ${sent} cliente(s) para completar lo que exige el formulario de registro. Cuando respondan, el aviso con el enlace listo les llega a el equipo.`);
   }
   return { sent };
 }
 
-export async function runSistemaViventa(env: Env, now = Date.now()): Promise<void> {
-  await runGuionSeguimiento(env, now).catch((e) => console.error("[sistemaViventa] guion:", e));
-  await runSeguimientoProyectos(env, now).catch((e) => console.error("[sistemaViventa] proyectos:", e));
-  await runRecordatoriosLlamada(env, now).catch((e) => console.error("[sistemaViventa] llamada:", e));
-  await runPedirTelefono(env, now).catch((e) => console.error("[sistemaViventa] teléfono:", e));
-  await runPedirDatos(env, now).catch((e) => console.error("[sistemaViventa] datos:", e));
+export async function runSistemaAtencion(env: Env, now = Date.now()): Promise<void> {
+  await runGuionSeguimiento(env, now).catch((e) => console.error("[sistemaAtencion] guion:", e));
+  await runSeguimientoProyectos(env, now).catch((e) => console.error("[sistemaAtencion] proyectos:", e));
+  await runRecordatoriosLlamada(env, now).catch((e) => console.error("[sistemaAtencion] llamada:", e));
+  await runPedirTelefono(env, now).catch((e) => console.error("[sistemaAtencion] teléfono:", e));
+  await runPedirDatos(env, now).catch((e) => console.error("[sistemaAtencion] datos:", e));
   const { runResumenDia, runExcelListos } = await import("./resumenDia");
-  await runResumenDia(env, now).catch((e) => console.error("[sistemaViventa] resumen:", e));
-  await runExcelListos(env, now).catch((e) => console.error("[sistemaViventa] excel:", e));
+  await runResumenDia(env, now).catch((e) => console.error("[sistemaAtencion] resumen:", e));
+  await runExcelListos(env, now).catch((e) => console.error("[sistemaAtencion] excel:", e));
 }

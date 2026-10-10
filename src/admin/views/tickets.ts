@@ -3,7 +3,7 @@ import { traductor } from "../i18n";
 import { Db } from "../../db/client";
 import { TicketsRepo } from "../../db/tickets";
 import { layout } from "./layout";
-import { etiquetaOrigen, type OrigenRow } from "../../lib/camila";
+import { etiquetaOrigen, type OrigenRow } from "../../lib/equipo";
 
 function esc(s: string): string {
   return s.replace(

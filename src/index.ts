@@ -294,12 +294,12 @@ app.post("/webhooks/telegram", (c) => {
     return c.text("forbidden", 403);
   }
   return (async () => {
-    // Camila y Maricela escriben al bot para sus comandos (registrado / pendientes),
+    // El equipo escribe al bot para sus comandos (registrado / pendientes),
     // no para ser atendidas como clientes: se responden aquí y no pasan al agente.
     try {
       const upd = (await c.req.raw.clone().json()) as { message?: { from?: { id?: number }; chat?: { id?: number }; text?: string } };
       const from = String(upd.message?.from?.id ?? "");
-      const { teamTelegramIds } = await import("./lib/camila");
+      const { teamTelegramIds } = await import("./lib/equipo");
       if (from && teamTelegramIds(c.env).includes(from)) {
         const { comandoEquipo } = await import("./followup/resumenDia");
         const reply = await comandoEquipo(c.env, upd.message?.text ?? "");
@@ -745,27 +745,15 @@ export default {
         const { sendAppointmentReminders } = await import("./followup/appointmentReminder");
         await sendAppointmentReminders(env).catch((e) => console.error("appointmentReminder:", e));
       }
-      // Sistema de atención Viventa: seguimiento del guion (~24 h), seguimiento a
+      // Sistema de atención: seguimiento del guion (~24 h), seguimiento a
       // 48 h de los proyectos y recordatorios de la videollamada (24 h / 1 h) +
-      // resumen para Maricela. Cada uno reclama antes de enviar (sin duplicados).
+      // resumen para la asesora. Cada uno reclama antes de enviar (sin duplicados).
       // Cada 15 min (no cada 5): ahorra lecturas de D1 y las ventanas de los
       // recordatorios (≥ 1 h) lo toleran de sobra.
       if (new Date().getUTCMinutes() % 15 < 5) {
-        const { runSistemaViventa } = await import("./followup/sistemaViventa");
-        await runSistemaViventa(env).catch((e) => console.error("sistemaViventa:", e));
+        const { runSistemaAtencion } = await import("./followup/sistemaAtencion");
+        await runSistemaAtencion(env).catch((e) => console.error("sistemaAtencion:", e));
       }
-      // Sincroniza el catálogo de proyectos de viventa.co/proyectos al KB, en
-      // tandas — pedido del dueño 2026-09-25: el bot debe conocer siempre los
-      // proyectos activos SIN que nadie los cargue a mano, pero sin redirigir
-      // nunca al cliente a la web (ver custom_instructions).
-      const t2 = Date.now();
-      const { runViventaProyectosImportTick } = await import("./kb/importViventaProyectos");
-      await runViventaProyectosImportTick(env).catch((e) => console.error("importViventaProyectos:", e));
-      console.log(`[cron5] runViventaProyectosImportTick: ${Date.now() - t2}ms`);
-      // Datos fijos del negocio (ej. bancos aliados) que faltaban en la KB —
-      // se siembran una sola vez, gatean solos por settings.
-      const { seedBusinessFacts } = await import("./kb/seedBusinessFacts");
-      await seedBusinessFacts(env).catch((e) => console.error("seedBusinessFacts:", e));
       console.log(`[cron5] TOTAL: ${Date.now() - t0}ms`);
       return;
     }

@@ -1,11 +1,11 @@
 /**
- * Aviso al equipo comercial (Camila) — Viventa.
+ * Aviso al equipo comercial (el equipo) — la empresa.
  *
- * Camila envía los proyectos cuando el bot termina el guion de calificación,
+ * el equipo envía los proyectos cuando el bot termina el guion de calificación,
  * así que necesita enterarse de cada traspaso con la ficha completa del lead.
  * Canales (cada uno opcional e independiente, best-effort, nunca lanza):
- *   • Telegram: CAMILA_TELEGRAM_CHAT_ID (reusa TELEGRAM_BOT_TOKEN del bot)
- *   • Correo:   CAMILA_EMAIL (Resend, igual que el aviso al dueño)
+ *   • Telegram: EQUIPO_TELEGRAM_CHAT_ID (reusa TELEGRAM_BOT_TOKEN del bot)
+ *   • Correo:   EQUIPO_EMAIL (Resend, igual que el aviso al dueño)
  * Los valores de contacto viven como secretos del worker; el repo es público.
  */
 import { Resend } from "resend";
@@ -19,26 +19,26 @@ export interface TeamNotice {
 }
 
 /**
- * Destinatarios de Telegram del equipo comercial: CAMILA_TELEGRAM_CHAT_ID admite
- * VARIOS ids separados por coma (Camila y Maricela), p. ej. "111,222".
+ * Destinatarios de Telegram del equipo comercial: EQUIPO_TELEGRAM_CHAT_ID admite
+ * VARIOS ids separados por coma (el equipo), p. ej. "111,222".
  */
-export function teamTelegramIds(env: Pick<Env, "CAMILA_TELEGRAM_CHAT_ID">): string[] {
-  return String(env.CAMILA_TELEGRAM_CHAT_ID ?? "")
+export function teamTelegramIds(env: Pick<Env, "EQUIPO_TELEGRAM_CHAT_ID">): string[] {
+  return String(env.EQUIPO_TELEGRAM_CHAT_ID ?? "")
     .split(/[,;\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
-export function camilaConfigured(env: Env): boolean {
+export function equipoConfigured(env: Env): boolean {
   const telegram = Boolean(env.TELEGRAM_BOT_TOKEN && teamTelegramIds(env).length > 0);
-  const mail = Boolean(env.RESEND_API_KEY && env.CAMILA_EMAIL);
+  const mail = Boolean(env.RESEND_API_KEY && env.EQUIPO_EMAIL);
   return telegram || mail;
 }
 
-/** Manda un aviso a Camila por Telegram y/o correo. Devuelve si algún canal lo aceptó. */
-export async function notifyCamila(env: Env, notice: TeamNotice): Promise<boolean> {
-  if (!camilaConfigured(env)) {
-    console.error(`[camila] "${notice.heading}" sin canal (falta CAMILA_TELEGRAM_CHAT_ID o CAMILA_EMAIL) — Camila no lo verá`);
+/** Manda un aviso a el equipo por Telegram y/o correo. Devuelve si algún canal lo aceptó. */
+export async function notifyEquipo(env: Env, notice: TeamNotice): Promise<boolean> {
+  if (!equipoConfigured(env)) {
+    console.error(`[equipo] "${notice.heading}" sin canal (falta EQUIPO_TELEGRAM_CHAT_ID o EQUIPO_EMAIL) — el equipo no lo verá`);
     return false;
   }
   let delivered = false;
@@ -53,26 +53,26 @@ export async function notifyCamila(env: Env, notice: TeamNotice): Promise<boolea
           body: JSON.stringify({ chat_id: chatId, text }),
         });
         if (res.ok) delivered = true;
-        else console.error(`[camila] telegram ${chatId} http_${res.status}`);
+        else console.error(`[equipo] telegram ${chatId} http_${res.status}`);
       } catch (e) {
-        console.error(`[camila] telegram ${chatId} failed:`, e);
+        console.error(`[equipo] telegram ${chatId} failed:`, e);
       }
     }
   }
 
-  if (env.RESEND_API_KEY && env.CAMILA_EMAIL) {
+  if (env.RESEND_API_KEY && env.EQUIPO_EMAIL) {
     try {
       const resend = new Resend(env.RESEND_API_KEY);
       const html = notice.body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
       await resend.emails.send({
         from: `${env.BUSINESS_NAME} Bot <onboarding@resend.dev>`,
-        to: env.CAMILA_EMAIL,
+        to: env.EQUIPO_EMAIL,
         subject: notice.heading,
         html: `<p>${html}</p>${notice.url ? `<p><a href="${notice.url}">Abrir panel</a></p>` : ""}`,
       });
       delivered = true;
     } catch (e) {
-      console.error("[camila] resend failed:", e);
+      console.error("[equipo] resend failed:", e);
     }
   }
   return delivered;
@@ -117,7 +117,7 @@ export async function leadFicha(db: Db, conversationId: string | null): Promise<
       [conversationId],
     );
   } catch (e) {
-    console.error("[camila] leadFicha:", e);
+    console.error("[equipo] leadFicha:", e);
   }
   if (!rows.length) return "(sin ficha: el bot todavía no guardó datos de este cliente)";
 
@@ -177,7 +177,7 @@ export async function origenCliente(db: Db, conversationId: string | null): Prom
     );
     return rows[0] ? etiquetaOrigen(rows[0]) : "";
   } catch (e) {
-    console.error("[camila] origenCliente:", e);
+    console.error("[equipo] origenCliente:", e);
     return "";
   }
 }
@@ -186,7 +186,7 @@ export async function origenCliente(db: Db, conversationId: string | null): Prom
  * Manda un archivo (p. ej. el CSV para Zoho) al equipo por Telegram. Best-effort:
  * nunca lanza; devuelve si algún destinatario lo recibió.
  */
-export async function notifyCamilaDocument(
+export async function notifyEquipoDocument(
   env: Env,
   doc: { filename: string; content: string | Uint8Array; mime?: string; caption?: string },
 ): Promise<boolean> {
@@ -203,9 +203,9 @@ export async function notifyCamilaDocument(
         body: form,
       });
       if (res.ok) delivered = true;
-      else console.error(`[camila] documento ${chatId} http_${res.status}`);
+      else console.error(`[equipo] documento ${chatId} http_${res.status}`);
     } catch (e) {
-      console.error(`[camila] documento ${chatId} failed:`, e);
+      console.error(`[equipo] documento ${chatId} failed:`, e);
     }
   }
   return delivered;

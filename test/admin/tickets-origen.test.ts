@@ -14,7 +14,7 @@ beforeEach(async () => {
   const mf = await createTestMiniflare();
   const d1 = (await mf.getD1Database("DB")) as any;
   db = new Db(d1);
-  env = { DB: d1, BUSINESS_NAME: "Viventa" } as unknown as Env;
+  env = { DB: d1, BUSINESS_NAME: "la empresa" } as unknown as Env;
 });
 
 async function conv(id: string, channel: string, user: string, name: string) {

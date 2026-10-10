@@ -29,7 +29,7 @@ async function conv(id = "ycloud:34600000001") {
   return id;
 }
 const flag = async (id: string) =>
-  (await db.first<{ f: string | null }>("SELECT json_extract(metadata,'$.viventa_fallo') AS f FROM conversations WHERE id = ?", [id]))?.f;
+  (await db.first<{ f: string | null }>("SELECT json_extract(metadata,'$.bot_fallo') AS f FROM conversations WHERE id = ?", [id]))?.f;
 
 beforeEach(async () => {
   const mf = await createTestMiniflare();
@@ -50,7 +50,7 @@ describe("registrarFalloIA", () => {
   });
   it("un fallo del último reintento (n=3) es definitivo", async () => {
     const id = await conv();
-    await db.run("UPDATE conversations SET metadata = json('{\"viventa_fallo\":{\"n\":3,\"at\":1}}') WHERE id = ?", [id]);
+    await db.run("UPDATE conversations SET metadata = json('{\"bot_fallo\":{\"n\":3,\"at\":1}}') WHERE id = ?", [id]);
     expect((await registrarFalloIA(env, db, id, new Error("x"), true, NOW)).final).toBe(true);
   });
 });
@@ -60,7 +60,7 @@ describe("runReintentosIA", () => {
     const id = await conv();
     await registrarFalloIA(env, db, id, new Error("x"), false, NOW - 2 * MIN);
     expect((await runReintentosIA(env, NOW)).retried).toBe(0);
-    await db.run("UPDATE conversations SET metadata = json('{\"viventa_fallo\":{\"n\":1,\"at\":" + (NOW - 4 * MIN) + "}}') WHERE id = ?", [id]);
+    await db.run("UPDATE conversations SET metadata = json('{\"bot_fallo\":{\"n\":1,\"at\":" + (NOW - 4 * MIN) + "}}') WHERE id = ?", [id]);
     expect((await runReintentosIA(env, NOW)).retried).toBe(1);
     expect(retryMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse((await flag(id))!)).toEqual({ n: 2, at: NOW });
@@ -68,15 +68,15 @@ describe("runReintentosIA", () => {
   });
   it("el segundo reintento espera 10 min", async () => {
     const id = await conv();
-    await db.run("UPDATE conversations SET metadata = json('{\"viventa_fallo\":{\"n\":2,\"at\":" + (NOW - 5 * MIN) + "}}') WHERE id = ?", [id]);
+    await db.run("UPDATE conversations SET metadata = json('{\"bot_fallo\":{\"n\":2,\"at\":" + (NOW - 5 * MIN) + "}}') WHERE id = ?", [id]);
     expect((await runReintentosIA(env, NOW)).retried).toBe(0);
-    await db.run("UPDATE conversations SET metadata = json('{\"viventa_fallo\":{\"n\":2,\"at\":" + (NOW - 11 * MIN) + "}}') WHERE id = ?", [id]);
+    await db.run("UPDATE conversations SET metadata = json('{\"bot_fallo\":{\"n\":2,\"at\":" + (NOW - 11 * MIN) + "}}') WHERE id = ?", [id]);
     expect((await runReintentosIA(env, NOW)).retried).toBe(1);
   });
   it("si ya respondió alguien (último mensaje no es del cliente) o la conversación está pausada, limpia y no reintenta", async () => {
     const id = await conv();
     await new MessagesRepo(db).append(id, "assistant", "ya", { createdAt: NOW - MIN });
-    await db.run("UPDATE conversations SET metadata = json('{\"viventa_fallo\":{\"n\":1,\"at\":" + (NOW - 5 * MIN) + "}}') WHERE id = ?", [id]);
+    await db.run("UPDATE conversations SET metadata = json('{\"bot_fallo\":{\"n\":1,\"at\":" + (NOW - 5 * MIN) + "}}') WHERE id = ?", [id]);
     expect((await runReintentosIA(env, NOW)).retried).toBe(0);
     expect(await flag(id)).toBeNull();
   });

@@ -1,6 +1,6 @@
 /**
- * Sistema Viventa: seguimiento del guion (~24 h), seguimiento a 48 h de los
- * proyectos y recordatorios de la videollamada (24 h / 1 h + resumen a Maricela).
+ * Sistema de atención: seguimiento del guion (~24 h), seguimiento a 48 h de los
+ * proyectos y recordatorios de la videollamada (24 h / 1 h + resumen a la asesora).
  * Todos reclaman antes de enviar: una segunda pasada no repite nada.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const sendOutboundMock = vi.fn();
 const sendTemplateMock = vi.fn();
 const messageOwnerMock = vi.fn();
-const notifyCamilaMock = vi.fn();
+const notifyEquipoMock = vi.fn();
 
 vi.mock("../../src/followup/send", () => ({
   sendOutbound: (...a: unknown[]) => sendOutboundMock(...a),
@@ -21,9 +21,9 @@ vi.mock("../../src/tools/handoffHuman", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/tools/handoffHuman")>();
   return { ...actual, messageOwner: (...a: unknown[]) => messageOwnerMock(...a) };
 });
-vi.mock("../../src/lib/camila", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/lib/camila")>();
-  return { ...actual, notifyCamila: (...a: unknown[]) => notifyCamilaMock(...a) };
+vi.mock("../../src/lib/equipo", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/equipo")>();
+  return { ...actual, notifyEquipo: (...a: unknown[]) => notifyEquipoMock(...a) };
 });
 
 import { createTestMiniflare } from "../helpers/miniflareSetup";
@@ -41,7 +41,7 @@ import {
   TEXTO_PEDIR_TELEFONO,
   TPL_SEGUIMIENTO,
   TPL_RECORDATORIO,
-} from "../../src/followup/sistemaViventa";
+} from "../../src/followup/sistemaAtencion";
 import type { Env } from "../../src/env";
 
 const H = 3600_000;
@@ -71,8 +71,8 @@ beforeEach(async () => {
   const d1 = (await mf.getD1Database("DB")) as any;
   env = {
     DB: d1,
-    BOT_NAME: "Maricela",
-    BUSINESS_NAME: "Viventa",
+    BOT_NAME: "la asesora",
+    BUSINESS_NAME: "la empresa",
     BOT_LANGUAGE: "es",
     BOT_TIER: "pro",
     BOT_TIMEZONE: "Europe/Madrid",
@@ -85,7 +85,7 @@ beforeEach(async () => {
   sendOutboundMock.mockReset().mockResolvedValue(undefined);
   sendTemplateMock.mockReset().mockResolvedValue(undefined);
   messageOwnerMock.mockReset().mockResolvedValue(undefined);
-  notifyCamilaMock.mockReset().mockResolvedValue(true);
+  notifyEquipoMock.mockReset().mockResolvedValue(true);
 });
 
 describe("seguimiento del guion", () => {
@@ -96,14 +96,14 @@ describe("seguimiento del guion", () => {
     return id;
   }
 
-  it("manda UN recordatorio entre 20 y 23,5 h y avisa a Camila; no repite", async () => {
+  it("manda UN recordatorio entre 20 y 23,5 h y avisa a el equipo; no repite", async () => {
     await seedGuion("34600000001", 21);
     const r1 = await runGuionSeguimiento(env, NOW);
     expect(r1.sent).toBe(1);
     expect(sendOutboundMock).toHaveBeenCalledTimes(1);
     expect(sendOutboundMock.mock.calls[0][1].text).toContain("¿Seguimos con las preguntas?");
     expect(sendOutboundMock.mock.calls[0][1].text).toContain("Ana");
-    expect(notifyCamilaMock).toHaveBeenCalledTimes(1);
+    expect(notifyEquipoMock).toHaveBeenCalledTimes(1);
 
     const r2 = await runGuionSeguimiento(env, NOW + 5 * 60_000);
     expect(r2.sent).toBe(0);
@@ -117,7 +117,7 @@ describe("seguimiento del guion", () => {
     expect(sendOutboundMock).not.toHaveBeenCalled();
   });
 
-  it("no escribe si el guion ya terminó (traspaso a Camila) o si la última palabra fue del cliente", async () => {
+  it("no escribe si el guion ya terminó (traspaso a el equipo) o si la última palabra fue del cliente", async () => {
     const done = await seedGuion("34600000004", 21);
     await seedTicket(done, NOW - 20 * H);
     const alClienteLeToca = await seedConv("ycloud", "34600000005");
@@ -137,21 +137,21 @@ describe("seguimiento de proyectos a 48 h", () => {
     return id;
   }
 
-  it("WhatsApp fuera de ventana SIN plantilla: no envía y avisa a Camila", async () => {
+  it("WhatsApp fuera de ventana SIN plantilla: no envía y avisa a el equipo", async () => {
     await seedProyectos("34600000010", "ycloud", 49);
     const r = await runSeguimientoProyectos(env, NOW);
     expect(r).toEqual({ sent: 0, sinPlantilla: 1 });
     expect(sendTemplateMock).not.toHaveBeenCalled();
-    expect(notifyCamilaMock.mock.calls[0][1].heading).toContain("NO enviado");
+    expect(notifyEquipoMock.mock.calls[0][1].heading).toContain("NO enviado");
   });
 
-  it("WhatsApp con plantilla configurada: la manda y avisa a Camila", async () => {
-    await settings.set(TPL_SEGUIMIENTO, "viventa_seguimiento");
+  it("WhatsApp con plantilla configurada: la manda y avisa a el equipo", async () => {
+    await settings.set(TPL_SEGUIMIENTO, "bot_seguimiento");
     await seedProyectos("34600000011", "ycloud", 50);
     const r = await runSeguimientoProyectos(env, NOW);
     expect(r.sent).toBe(1);
-    expect(sendTemplateMock).toHaveBeenCalledWith(expect.anything(), "34600000011", "viventa_seguimiento", "es", ["Ana"]);
-    expect(notifyCamilaMock.mock.calls[0][1].heading).toContain("48 h");
+    expect(sendTemplateMock).toHaveBeenCalledWith(expect.anything(), "34600000011", "bot_seguimiento", "es", ["Ana"]);
+    expect(notifyEquipoMock.mock.calls[0][1].heading).toContain("48 h");
   });
 
   it("Instagram (zernio) va en texto libre", async () => {
@@ -176,10 +176,10 @@ describe("videollamada: recordatorios y resumen", () => {
   async function seedCita(userId: string, startMs: number, createdAt: number, estado = "Reservada (Cal.com)") {
     const convId = await seedConv("ycloud", userId);
     await msgs.append(convId, "user", "quiero agendar", { createdAt: NOW - 3 * H });
-    const meta = JSON.stringify({ servicio: "Videollamada Viventa", calStart: new Date(startMs).toISOString(), estado });
+    const meta = JSON.stringify({ servicio: "Videollamada", calStart: new Date(startMs).toISOString(), estado });
     await db.run(
       `INSERT INTO leads (id, conversation_id, name, contact, channel_user_id, intent, metadata, created_at, updated_at)
-       VALUES (?, ?, 'Ana Pérez', ?, ?, 'Cita · Videollamada Viventa · 2026-10-21 14:00', ?, ?, ?)`,
+       VALUES (?, ?, 'Ana Pérez', ?, ?, 'Cita · Videollamada · 2026-10-21 14:00', ?, ?, ?)`,
       [crypto.randomUUID(), convId, userId, userId, meta, createdAt, createdAt],
     );
     return convId;
@@ -197,7 +197,7 @@ describe("videollamada: recordatorios y resumen", () => {
     expect((await runRecordatoriosLlamada(env, NOW + 5 * 60_000)).r24).toBe(0);
   });
 
-  it("a ~1 h manda el recordatorio y el resumen del lead a Maricela", async () => {
+  it("a ~1 h manda el recordatorio y el resumen del lead a la asesora", async () => {
     await seedCita("34600000021", NOW + 55 * 60_000, NOW - 3 * 24 * H);
     const r = await runRecordatoriosLlamada(env, NOW);
     expect(r.r1).toBe(1);
@@ -207,13 +207,13 @@ describe("videollamada: recordatorios y resumen", () => {
     expect(sendOutboundMock.mock.calls[0][1].text).toContain("En una hora");
   });
 
-  it("con equipo comercial configurado, el resumen va a Camila/Maricela y no al dueño", async () => {
+  it("con equipo comercial configurado, el resumen va a el equipo y no al dueño", async () => {
     (env as any).TELEGRAM_BOT_TOKEN = "T";
-    (env as any).CAMILA_TELEGRAM_CHAT_ID = "111,222";
+    (env as any).EQUIPO_TELEGRAM_CHAT_ID = "111,222";
     await seedCita("34600000026", NOW + 55 * 60_000, NOW - 3 * 24 * H);
     const r = await runRecordatoriosLlamada(env, NOW);
     expect(r.resumenes).toBe(1);
-    expect(notifyCamilaMock.mock.calls.some((c) => String(c[1].heading).includes("Videollamada"))).toBe(true);
+    expect(notifyEquipoMock.mock.calls.some((c) => String(c[1].heading).includes("Videollamada"))).toBe(true);
     expect(messageOwnerMock).not.toHaveBeenCalled();
   });
 
@@ -225,29 +225,29 @@ describe("videollamada: recordatorios y resumen", () => {
     expect(sendOutboundMock).not.toHaveBeenCalled();
   });
 
-  it("fuera de la ventana de WhatsApp usa la plantilla; sin plantilla avisa al dueño y a Camila", async () => {
+  it("fuera de la ventana de WhatsApp usa la plantilla; sin plantilla avisa al dueño y a el equipo", async () => {
     const convId = await seedCita("34600000024", NOW + 23.5 * H, NOW - 5 * 24 * H);
     await db.run("UPDATE messages SET created_at = ? WHERE conversation_id = ?", [NOW - 3 * 24 * H, convId]);
 
     await runRecordatoriosLlamada(env, NOW);
     expect(sendTemplateMock).not.toHaveBeenCalled();
     expect(messageOwnerMock.mock.calls[0][1].heading).toContain("NO enviado");
-    expect(notifyCamilaMock).toHaveBeenCalled();
+    expect(notifyEquipoMock).toHaveBeenCalled();
 
-    await settings.set(TPL_RECORDATORIO, "viventa_recordatorio");
+    await settings.set(TPL_RECORDATORIO, "bot_recordatorio");
     await seedCita("34600000025", NOW + 23.5 * H, NOW - 5 * 24 * H);
     const c2 = "ycloud:34600000025";
     await db.run("UPDATE messages SET created_at = ? WHERE conversation_id = ?", [NOW - 3 * 24 * H, c2]);
     const r = await runRecordatoriosLlamada(env, NOW + 10 * 60_000);
     expect(r.r24).toBe(1);
-    expect(sendTemplateMock).toHaveBeenCalledWith(expect.anything(), "34600000025", "viventa_recordatorio", "es", ["Ana", expect.stringMatching(/^\d\d:\d\d$/)]);
+    expect(sendTemplateMock).toHaveBeenCalledWith(expect.anything(), "34600000025", "bot_recordatorio", "es", ["Ana", expect.stringMatching(/^\d\d:\d\d$/)]);
   });
 });
 
 describe("límite de lecturas de D1 (el cron NO puede hacer subconsultas por conversación)", () => {
   it("el código no usa subconsultas correlacionadas sobre tickets/messages (leían ~60 mil filas por pasada)", async () => {
     const { readFileSync } = await import("node:fs");
-    const src = readFileSync("src/followup/sistemaViventa.ts", "utf8");
+    const src = readFileSync("src/followup/sistemaAtencion.ts", "utf8");
     expect(src).not.toMatch(/t\.conversation_id\s*=\s*c\.id/);
     expect(src).not.toMatch(/m\.conversation_id\s*=\s*c\.id/);
     expect(src).not.toMatch(/EXISTS\s*\(\s*SELECT/i);
@@ -263,7 +263,7 @@ describe("pedir el teléfono a Instagram", () => {
     return id;
   }
 
-  it("envía el texto de Maricela una sola vez", async () => {
+  it("envía el texto de la asesora una sola vez", async () => {
     const id = await seedIg("ig1", 120);
     expect((await runPedirTelefono(env, NOW)).sent).toBe(1);
     expect(sendOutboundMock.mock.calls[0][1]).toMatchObject({ conversationId: id, channel: "zernio", text: TEXTO_PEDIR_TELEFONO });
@@ -341,7 +341,7 @@ describe("pedir los datos que faltan para el formulario", () => {
   it("no escribe si ya tiene todo, si ya está registrado o si pasaron las ventanas", async () => {
     await seedCalificado("ycloud", "34600000012", { name: "Luis Pérez", contact: "l@x.com", meta: { ciudadResidencia: "España, Girona", ciudadCompra: "Cali" } });
     const reg = await seedCalificado("ycloud", "34600000013", { name: "Eva", contact: "", meta: {} });
-    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.viventa_registrado','x') WHERE id = ?", [reg]);
+    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.bot_registrado','x') WHERE id = ?", [reg]);
     await seedCalificado("zernio", "ig-vieja", { name: "Zoe", contact: "", meta: {} }, 23 * 60);
     expect((await runPedirDatos(env, NOW)).sent).toBe(0);
   });
@@ -353,17 +353,17 @@ describe("pedir los datos que faltan para el formulario", () => {
 
   it("si ya se le pidió el teléfono de Instagram, no se lo repite", async () => {
     const id = await seedCalificado("zernio", "ig-tel", { name: "Marta Ruiz", contact: "m@x.com", meta: { ciudadResidencia: "España, Girona", ciudadCompra: "Cali" } });
-    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.viventa_pidetel','x') WHERE id = ?", [id]);
+    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.bot_pidetel','x') WHERE id = ?", [id]);
     expect((await runPedirDatos(env, NOW)).sent).toBe(0);
   });
 
   it("cuando completan lo pedido avisa al equipo con el enlace una sola vez", async () => {
     const id = await seedCalificado("ycloud", "34600000015", { name: "Ana Gil", contact: "a@x.com", meta: { ciudadResidencia: "España, Girona", ciudadCompra: "Cali" } });
-    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.viventa_pidedatos','x') WHERE id = ?", [id]);
+    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.bot_pidedatos','x') WHERE id = ?", [id]);
     await runPedirDatos(env, NOW);
-    expect(notifyCamilaMock).toHaveBeenCalledTimes(1);
-    expect(notifyCamilaMock.mock.calls[0][1].heading).toContain("completó");
+    expect(notifyEquipoMock).toHaveBeenCalledTimes(1);
+    expect(notifyEquipoMock.mock.calls[0][1].heading).toContain("completó");
     await runPedirDatos(env, NOW);
-    expect(notifyCamilaMock).toHaveBeenCalledTimes(1);
+    expect(notifyEquipoMock).toHaveBeenCalledTimes(1);
   });
 });

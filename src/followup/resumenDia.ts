@@ -1,5 +1,5 @@
 /**
- * Resumen diario para Maricela (Viventa), una vez al día a las 8:00 de España:
+ * Resumen diario para la asesora , una vez al día a las 8:00 de España:
  *
  *  1. Mensaje de Telegram con los leads de las últimas 24 h ordenados por
  *     prioridad (🔥 caliente / 🟡 tibio / ⚪ frío): a quién llamar primero, con
@@ -14,14 +14,14 @@ import type { Env } from "../env";
 import { Db } from "../db/client";
 import { SettingsRepo } from "../db/settings";
 import { selfOrigin } from "../lib/self-origin";
-import { camilaConfigured, notifyCamila, notifyCamilaDocument } from "../lib/camila";
+import { equipoConfigured, notifyEquipo, notifyEquipoDocument } from "../lib/equipo";
 import { buildXlsx, type Celda } from "../lib/xlsx";
 
 const H = 3600_000;
 const MAX_LINEAS = 15;
 /** Ajustes en D1 (no en el repo, que es público): enlace del formulario y CSV opcional. */
-export const SETTING_FORM_URL = "viventa_form_url";
-const SETTING_CSV = "viventa_csv_activo";
+export const SETTING_FORM_URL = "bot_form_url";
+const SETTING_CSV = "bot_csv_activo";
 
 // ─── Puntuación ────────────────────────────────────────────────────────────────
 
@@ -160,7 +160,7 @@ export function armarLeads(convs: ConvInfo[], leads: LeadRow[]): LeadResumen[] {
 const DOMINIO_SIN_CORREO = "correo-no-proporcionado.invalid";
 
 /**
- * El formulario exige correo. Si el cliente no lo dio, por pedido de Maricela se
+ * El formulario exige correo. Si el cliente no lo dio, por pedido de la asesora se
  * usa uno inventado con su nombre, siempre en un dominio que no existe y marcado
  * como tal en el Excel y en los avisos (nunca pasa por real).
  */
@@ -247,7 +247,7 @@ function opcion(texto: string | undefined, opciones: string[], alias: Record<str
 
 /**
  * Enlace del formulario con los datos del cliente ya escritos (Zoho Forms admite
- * valores iniciales por la URL). Maricela solo revisa, marca los términos y envía.
+ * valores iniciales por la URL). la asesora solo revisa, marca los términos y envía.
  * Los campos fijos del formulario (fuente, canal, etc.) los pone el propio formulario.
  */
 export function urlFormulario(base: string, l: LeadResumen): string {
@@ -310,16 +310,16 @@ function madridParts(now: number): { hora: number; dia: string } {
 
 export async function runResumenDia(env: Env, now = Date.now()): Promise<{ sent: boolean; leads: number }> {
   const { hora, dia } = madridParts(now);
-  if (hora !== 8 || !camilaConfigured(env)) return { sent: false, leads: 0 };
+  if (hora !== 8 || !equipoConfigured(env)) return { sent: false, leads: 0 };
 
   const db = new Db(env.DB);
   // Una vez al día: la fila del día se crea solo la primera vez.
-  const res = await db.run("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)", [`viventa_resumen_${dia}`, "1", now]);
+  const res = await db.run("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)", [`bot_resumen_${dia}`, "1", now]);
   if ((res.meta?.changes ?? 0) === 0) return { sent: false, leads: 0 };
 
   const desde = now - 24 * H;
   const convs = await db.all<ConvInfo>(
-    "SELECT id, channel, channel_user_id, display_name, last_message_at FROM conversations WHERE last_message_at > ? AND json_extract(COALESCE(metadata, '{}'), '$.viventa_registrado') IS NULL AND json_extract(COALESCE(metadata, '{}'), '$.viventa_existente') IS NULL",
+    "SELECT id, channel, channel_user_id, display_name, last_message_at FROM conversations WHERE last_message_at > ? AND json_extract(COALESCE(metadata, '{}'), '$.bot_registrado') IS NULL AND json_extract(COALESCE(metadata, '{}'), '$.bot_existente') IS NULL",
     [desde],
   );
   if (convs.length === 0) return { sent: false, leads: 0 };
@@ -338,27 +338,27 @@ export async function runResumenDia(env: Env, now = Date.now()): Promise<{ sent:
   const formUrl = ((await settings.get(SETTING_FORM_URL)) ?? "").trim() || undefined;
   const msgs = mensajesResumen(leads, url, formUrl);
   for (let i = 0; i < msgs.length; i++) {
-    await notifyCamila(env, {
+    await notifyEquipo(env, {
       heading: i === 0 ? "☀️ Resumen del día" : `☀️ Resumen del día (${i + 1}/${msgs.length})`,
       body: msgs[i],
     });
   }
 
-  // CSV para importar en Zoho: opcional (settings viventa_csv_activo = 1). El camino
+  // CSV para importar en Zoho: opcional (settings bot_csv_activo = 1). El camino
   // normal de registro es el formulario, con los enlaces del propio resumen.
   if (((await settings.get(SETTING_CSV)) ?? "") === "1") {
     const nuevos: LeadResumen[] = [];
     for (const l of leads) {
       if (!l.telefono && !l.correo) continue;
       const r = await db.run(
-        `UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.viventa_csv', ?)
-          WHERE id = ? AND json_extract(COALESCE(metadata, '{}'), '$.viventa_csv') IS NULL`,
+        `UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.bot_csv', ?)
+          WHERE id = ? AND json_extract(COALESCE(metadata, '{}'), '$.bot_csv') IS NULL`,
         [dia, l.convId],
       );
       if ((r.meta?.changes ?? 0) > 0) nuevos.push(l);
     }
     if (nuevos.length > 0) {
-      await notifyCamilaDocument(env, {
+      await notifyEquipoDocument(env, {
         filename: `leads_zoho_${dia}.csv`,
         content: csvZoho(nuevos),
         caption: `📎 ${nuevos.length} lead(s) nuevos para importar en Zoho (Leads → Importar). En duplicados elige «Omitir».`,
@@ -414,7 +414,7 @@ export async function leadsPendientes(db: Db, now: number): Promise<Array<{ conv
   const marks = ids.map(() => "?").join(",");
   const convs = await db.all<ConvInfo & { metadata: string | null }>(
     `SELECT id, channel, channel_user_id, display_name, last_message_at, metadata FROM conversations
-      WHERE id IN (${marks}) AND json_extract(COALESCE(metadata, '{}'), '$.viventa_registrado') IS NULL AND json_extract(COALESCE(metadata, '{}'), '$.viventa_existente') IS NULL`,
+      WHERE id IN (${marks}) AND json_extract(COALESCE(metadata, '{}'), '$.bot_registrado') IS NULL AND json_extract(COALESCE(metadata, '{}'), '$.bot_existente') IS NULL`,
     ids,
   );
   if (convs.length === 0) return [];
@@ -437,7 +437,7 @@ export const AYUDA_EQUIPO =
   "• pendientes — lista los que faltan por registrar\n\n" +
   "Los avisos de clientes nuevos llegan solos, con el enlace del formulario ya rellenado.";
 
-/** Responde a un mensaje del equipo (Camila/Maricela). Devuelve el texto de respuesta. */
+/** Responde a un mensaje del equipo (el equipo). Devuelve el texto de respuesta. */
 export async function comandoEquipo(env: Env, texto: string, now = Date.now()): Promise<string> {
   const db = new Db(env.DB);
   const t = texto.trim();
@@ -449,7 +449,7 @@ export async function comandoEquipo(env: Env, texto: string, now = Date.now()): 
     if (coinc.length === 0) return `No encuentro a «${m[2].trim()}» entre los pendientes. Escribe «pendientes» para ver la lista.`;
     if (coinc.length > 1) return `Hay varios: ${coinc.map((c) => c.nombre).join(", ")}. Escribe el nombre completo.`;
     await db.run(
-      "UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.viventa_registrado', ?) WHERE id = ?",
+      "UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.bot_registrado', ?) WHERE id = ?",
       [new Date(now).toISOString(), coinc[0].convId],
     );
     return `✅ Marcado como registrado: ${coinc[0].nombre}`;
@@ -461,7 +461,7 @@ export async function comandoEquipo(env: Env, texto: string, now = Date.now()): 
     const coinc = pend.filter((p) => norm(p.nombre).includes(buscado) || buscado.includes(norm(p.nombre)));
     if (coinc.length !== 1) return coinc.length ? `Hay varios: ${coinc.map((c) => c.nombre).join(", ")}. Escribe el nombre completo.` : `No encuentro a «${e[2].trim()}» entre los pendientes.`;
     await db.run(
-      "UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.viventa_existente', ?) WHERE id = ?",
+      "UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.bot_existente', ?) WHERE id = ?",
       [new Date(now).toISOString(), coinc[0].convId],
     );
     return `🔴 Marcado como ya existente en el sistema (no se vuelve a avisar): ${coinc[0].nombre}`;
@@ -483,9 +483,9 @@ export async function leadsListos(db: Db, now: number): Promise<LeadResumen[]> {
   const convs = await db.all<ConvInfo>(
     `SELECT id, channel, channel_user_id, display_name, last_message_at FROM conversations
       WHERE last_message_at > ?
-        AND json_extract(COALESCE(metadata, '{}'), '$.viventa_registrado') IS NULL
-        AND json_extract(COALESCE(metadata, '{}'), '$.viventa_existente') IS NULL
-        AND json_extract(COALESCE(metadata, '{}'), '$.viventa_excel') IS NULL`,
+        AND json_extract(COALESCE(metadata, '{}'), '$.bot_registrado') IS NULL
+        AND json_extract(COALESCE(metadata, '{}'), '$.bot_existente') IS NULL
+        AND json_extract(COALESCE(metadata, '{}'), '$.bot_excel') IS NULL`,
     [now - 7 * 24 * H],
   );
   if (convs.length === 0) return [];
@@ -524,22 +524,22 @@ export function excelListos(leads: LeadResumen[], formUrl?: string): Uint8Array 
 }
 
 /**
- * A las 6:00 y 14:00 de España manda a Camila y Maricela el Excel con los clientes
+ * A las 6:00 y 14:00 de España manda a el equipo el Excel con los clientes
  * que ya están listos para el formulario (los nuevos desde el último envío). Si no
  * hay nuevos, un aviso corto. Una vez por franja y día.
  */
 export async function runExcelListos(env: Env, now = Date.now()): Promise<{ sent: boolean; leads: number }> {
   const { hora, dia } = madridParts(now);
-  if (!HORAS_EXCEL.includes(hora) || !camilaConfigured(env)) return { sent: false, leads: 0 };
+  if (!HORAS_EXCEL.includes(hora) || !equipoConfigured(env)) return { sent: false, leads: 0 };
 
   const db = new Db(env.DB);
   const franja = `${dia}-${String(hora).padStart(2, "0")}h`;
-  const res = await db.run("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)", [`viventa_excel_${franja}`, "1", now]);
+  const res = await db.run("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)", [`bot_excel_${franja}`, "1", now]);
   if ((res.meta?.changes ?? 0) === 0) return { sent: false, leads: 0 };
 
   const leads = await leadsListos(db, now);
   if (leads.length === 0) {
-    await notifyCamila(env, { heading: `📎 Excel de las ${hora}:00`, body: "Sin clientes nuevos listos para registrar desde el último envío ✅" });
+    await notifyEquipo(env, { heading: `📎 Excel de las ${hora}:00`, body: "Sin clientes nuevos listos para registrar desde el último envío ✅" });
     return { sent: true, leads: 0 };
   }
   const formUrl = ((await new SettingsRepo(db).get(SETTING_FORM_URL)) ?? "").trim() || undefined;
@@ -547,13 +547,13 @@ export async function runExcelListos(env: Env, now = Date.now()): Promise<{ sent
   const enviados: LeadResumen[] = [];
   for (const l of leads) {
     const r = await db.run(
-      `UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.viventa_excel', ?)
-        WHERE id = ? AND json_extract(COALESCE(metadata, '{}'), '$.viventa_excel') IS NULL`,
+      `UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.bot_excel', ?)
+        WHERE id = ? AND json_extract(COALESCE(metadata, '{}'), '$.bot_excel') IS NULL`,
       [franja, l.convId],
     );
     if ((r.meta?.changes ?? 0) > 0) enviados.push(l);
   }
-  const ok = await notifyCamilaDocument(env, {
+  const ok = await notifyEquipoDocument(env, {
     filename: `clientes_listos_${franja}.xlsx`,
     content: excelListos(enviados, formUrl),
     mime: XLSX_MIME,

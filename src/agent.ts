@@ -184,13 +184,13 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
     const { processedText, hasImage } = media;
 
     // ── Freno urgente (2026-09-28, pedido del dueño): el bot estaba
-    // interviniendo en conversaciones que Maricela YA lleva a mano y dañando
+    // interviniendo en conversaciones que la asesora YA lleva a mano y dañando
     // el trato con clientes antiguos (Requerimientos_chat_bot.pdf §2). Mientras
     // se arma el flujo completo del documento (detección fina de "cliente
     // nuevo" con lead/ticket/cita, prospección guiada, etc.), este freno usa
     // lo único que hace falta para resolver el daño real: si la conversación
     // YA EXISTÍA antes de este mensaje (cliente con historia previa), el bot
-    // se calla — igual que una pausa manual — y Maricela sigue por WhatsApp
+    // se calla — igual que una pausa manual — y la asesora sigue por WhatsApp
     // sin que el bot se le cruce. Con alguien que escribe por primera vez,
     // el bot sigue funcionando normal. Toggle por si hace falta apagarlo:
     // settings.mute_clientes_antiguos = '0' lo desactiva sin redeploy.
@@ -692,7 +692,7 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
     // Load history (last 80) — 20 se quedaba corto en conversaciones largas:
     // un cliente que vuelve semanas después y menciona algo hablado antes se
     // encontraba con el bot respondiendo como si no supiera nada (pedido del
-    // dueño 2026-09-28, tras feedback real de Maricela). No sube el costo de
+    // dueño 2026-09-28, tras feedback real de la asesora). No sube el costo de
     // las conversaciones cortas/nuevas — lastN solo trae lo que realmente
     // existe, nunca rellena de más.
     const history = await msgs.lastN(convId, 80);
@@ -1092,7 +1092,7 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
         }
       }
 
-      // Sin proveedor alterno configurado (Viventa solo tiene Anthropic — sin
+      // Sin proveedor alterno configurado (la empresa solo tiene Anthropic — sin
       // OPENAI_API_KEY/GOOGLE_API_KEY/XAI_API_KEY), fallbackModel() da null y
       // el bloque de arriba nunca corre: el bot solo tenía 2 intentos totales,
       // ambos contra el MISMO proveedor y separados por ~2-3.5s. Un hipo

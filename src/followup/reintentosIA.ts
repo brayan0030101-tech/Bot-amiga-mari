@@ -3,7 +3,7 @@
  *
  * Antes: si Anthropic fallaba en los 3 intentos seguidos (~15 s), el bot se
  * quedaba mudo y se abría un ticket para responder a mano (≈1 % de los turnos).
- * Ahora: el primer fallo se anota en la conversación (metadata.viventa_fallo) y
+ * Ahora: el primer fallo se anota en la conversación (metadata.bot_fallo) y
  * el cron lo reintenta a los 3 min y a los 10 min, sin guardar otra vez el
  * mensaje del cliente. Solo si también fallan los reintentos se avisa a una
  * persona. El error real de cada fallo queda en la tabla `ai_fallos` para poder
@@ -46,8 +46,8 @@ function describir(e: unknown): { status: number | null; message: string } {
 
 async function leerFlag(db: Db, convId: string): Promise<FalloFlag | null> {
   const r = await db.first<{ n: number | null; at: number | null }>(
-    `SELECT json_extract(COALESCE(metadata, '{}'), '$.viventa_fallo.n') AS n,
-            json_extract(COALESCE(metadata, '{}'), '$.viventa_fallo.at') AS at
+    `SELECT json_extract(COALESCE(metadata, '{}'), '$.bot_fallo.n') AS n,
+            json_extract(COALESCE(metadata, '{}'), '$.bot_fallo.at') AS at
        FROM conversations WHERE id = ?`,
     [convId],
   );
@@ -76,7 +76,7 @@ export async function registrarFalloIA(
     let n = 1;
     if (retry) n = (await leerFlag(db, convId))?.n ?? MAX_INTENTOS_IA;
     await db.run(
-      "UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.viventa_fallo', json(?)) WHERE id = ?",
+      "UPDATE conversations SET metadata = json_set(COALESCE(metadata, '{}'), '$.bot_fallo', json(?)) WHERE id = ?",
       [JSON.stringify({ n, at: now }), convId],
     );
     return { final: n >= MAX_INTENTOS_IA, n };
@@ -88,7 +88,7 @@ export async function registrarFalloIA(
 
 export async function limpiarFalloIA(db: Db, convId: string): Promise<void> {
   await db.run(
-    "UPDATE conversations SET metadata = json_remove(COALESCE(metadata, '{}'), '$.viventa_fallo') WHERE id = ?",
+    "UPDATE conversations SET metadata = json_remove(COALESCE(metadata, '{}'), '$.bot_fallo') WHERE id = ?",
     [convId],
   );
 }
@@ -105,11 +105,11 @@ export async function runReintentosIA(env: Env, now = Date.now()): Promise<{ ret
     at: number;
   }>(
     `SELECT id, channel, channel_user_id, paused_until,
-            json_extract(metadata, '$.viventa_fallo.n') AS n,
-            json_extract(metadata, '$.viventa_fallo.at') AS at
+            json_extract(metadata, '$.bot_fallo.n') AS n,
+            json_extract(metadata, '$.bot_fallo.at') AS at
        FROM conversations
       WHERE last_message_at > ?
-        AND json_extract(COALESCE(metadata, '{}'), '$.viventa_fallo.n') IS NOT NULL`,
+        AND json_extract(COALESCE(metadata, '{}'), '$.bot_fallo.n') IS NOT NULL`,
     [now - 2 * 60 * MIN],
   );
 
@@ -126,8 +126,8 @@ export async function runReintentosIA(env: Env, now = Date.now()): Promise<{ ret
     // Reclamo atómico: sube el contador y fija la hora; solo gana una pasada.
     const r = await db.run(
       `UPDATE conversations
-          SET metadata = json_set(COALESCE(metadata, '{}'), '$.viventa_fallo', json(?))
-        WHERE id = ? AND json_extract(COALESCE(metadata, '{}'), '$.viventa_fallo.at') = ?`,
+          SET metadata = json_set(COALESCE(metadata, '{}'), '$.bot_fallo', json(?))
+        WHERE id = ? AND json_extract(COALESCE(metadata, '{}'), '$.bot_fallo.at') = ?`,
       [JSON.stringify({ n: c.n + 1, at: now }), c.id, c.at],
     );
     if ((r.meta?.changes ?? 0) === 0) continue;

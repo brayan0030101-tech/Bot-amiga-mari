@@ -1,5 +1,5 @@
 /**
- * Resumen diario de Maricela: puntuación de leads, texto, CSV para Zoho y cron (1 vez al día).
+ * Resumen diario de la asesora: puntuación de leads, texto, CSV para Zoho y cron (1 vez al día).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createTestMiniflare } from "../helpers/miniflareSetup";
@@ -108,7 +108,7 @@ describe("runResumenDia", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", CAMILA_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "Viventa" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa" } as unknown as Env;
     fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
     const now = Date.UTC(2026, 9, 20, 6, 30); // 08:30 en Madrid
@@ -132,19 +132,19 @@ describe("runResumenDia", () => {
     expect((await runResumenDia(env, Date.UTC(2026, 9, 20, 12, 0))).sent).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
-  it("con viventa_csv_activo=1 manda el CSV a los dos", async () => {
-    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('viventa_csv_activo','1',1)");
+  it("con bot_csv_activo=1 manda el CSV a los dos", async () => {
+    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('bot_csv_activo','1',1)");
     await runResumenDia(env, A_LAS_8);
     expect(fetchMock.mock.calls.map((c) => c[0] as string).filter((u) => u.endsWith("/sendDocument")).length).toBe(2);
   });
-  it("con viventa_form_url el resumen lleva el enlace del formulario", async () => {
-    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('viventa_form_url','https://forms.example/f',1)");
+  it("con bot_form_url el resumen lleva el enlace del formulario", async () => {
+    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('bot_form_url','https://forms.example/f',1)");
     await runResumenDia(env, A_LAS_8);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.text).toContain("https://forms.example/f?Name_First=Ana");
   });
   it("al día siguiente no repite un lead ya exportado al CSV", async () => {
-    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('viventa_csv_activo','1',1)");
+    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('bot_csv_activo','1',1)");
     await runResumenDia(env, A_LAS_8);
     fetchMock.mockClear();
     const manana = A_LAS_8 + 24 * 3600_000;
@@ -165,7 +165,7 @@ describe("registro por el equipo", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", CAMILA_TELEGRAM_CHAT_ID: "1", BUSINESS_NAME: "Viventa" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1", BUSINESS_NAME: "la empresa" } as unknown as Env;
     for (const [id, user, name] of [["ycloud:34600000001", "34600000001", "Ana López Ruiz"], ["ycloud:34600000002", "34600000002", "Ana Gómez"], ["ycloud:34600000003", "34600000003", "Luis Pérez"]]) {
       await db.run("INSERT INTO conversations (id, channel, channel_user_id, display_name, started_at, last_message_at) VALUES (?,?,?,?,?,?)", [id, "ycloud", user, name, NOW - 5000, NOW - 5000]);
       await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, notes, metadata, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -208,7 +208,7 @@ describe("registro por el equipo", () => {
   });
   it("enlaceRegistro devuelve el formulario rellenado, o vacío sin configurar", async () => {
     expect(await enlaceRegistro(env, db, "ycloud:34600000003")).toBe("");
-    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('viventa_form_url','https://forms.example/f',1)");
+    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('bot_form_url','https://forms.example/f',1)");
     const e = await enlaceRegistro(env, db, "ycloud:34600000003");
     expect(e).toContain("https://forms.example/f?");
     expect(e).toContain("✅ Listo para registrar");
@@ -253,10 +253,10 @@ describe("Excel de clientes listos (6:00 y 14:00)", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", CAMILA_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "Viventa" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa" } as unknown as Env;
     fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
-    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('viventa_form_url','https://forms.example/f',1)");
+    await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('bot_form_url','https://forms.example/f',1)");
     const completo = JSON.stringify({ ciudadResidencia: "España, Girona", ciudadCompra: "Cali" });
     const filas: Array<[string, string, string, string, string]> = [
       ["ycloud:34600000021", "34600000021", "Ana López", "ana@x.com", completo], // listo
@@ -267,7 +267,7 @@ describe("Excel de clientes listos (6:00 y 14:00)", () => {
       await db.run("INSERT INTO conversations (id, channel, channel_user_id, display_name, started_at, last_message_at) VALUES (?,?,?,?,?,?)", [id, "ycloud", user, name, A_LAS_6 - 5000, A_LAS_6 - 5000]);
       await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, metadata, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)", [`l-${id}`, id, name, mail, "x", meta, "new", A_LAS_6 - 4000, A_LAS_6 - 4000]);
     }
-    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.viventa_registrado','x') WHERE id = 'ycloud:34600000023'");
+    await db.run("UPDATE conversations SET metadata = json_set(COALESCE(metadata,'{}'),'$.bot_registrado','x') WHERE id = 'ycloud:34600000023'");
   });
   afterEach(() => vi.unstubAllGlobals());
 

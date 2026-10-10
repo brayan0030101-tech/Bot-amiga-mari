@@ -206,8 +206,8 @@ export interface Env {
   COMPOSIO_ENTITY_ID?: string;  // opcional: filtra las cuentas conectadas por user_id (Composio v3); sin ella se usan TODAS las del proyecto
   OWNER_EMAIL: string;  // for handoff notifications (email)
   OWNER_TELEGRAM_CHAT_ID?: string;  // for handoff notifications (default channel)
-  CAMILA_TELEGRAM_CHAT_ID?: string; // Viventa: aviso a Camila (equipo comercial) por Telegram
-  CAMILA_EMAIL?: string;            // Viventa: aviso a Camila por correo (Resend)
+  EQUIPO_TELEGRAM_CHAT_ID?: string; // la empresa: aviso a el equipo (equipo comercial) por Telegram
+  EQUIPO_EMAIL?: string;            // la empresa: aviso a el equipo por correo (Resend)
   PROMPT_CACHE_TTL?: string;       // "1h" = el prompt grande dura 1 h en caché de Anthropic (default "5m")
   ANTHROPIC_EFFORT?: string;        // low | medium | high — esfuerzo de razonamiento de Sonnet/Opus 5.5 (vacío = el del modelo)
   OWNER_WA_NUMBER?: string;  // for Pro handoff WhatsApp DM (requires template)

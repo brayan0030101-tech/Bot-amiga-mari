@@ -18,7 +18,7 @@ import { calcomConfigured } from "../src/integrations/calcom";
 import { verDisponibilidadTool, agendarCitaTool, cancelarCitaTool } from "../src/tools/servicios";
 
 // El giro "inmobiliaria" no trae agendarCita/verDisponibilidad de fábrica (esas
-// tools son de los giros de cita — barbería, spa, dentista…). Viventa SÍ agenda
+// tools son de los giros de cita — barbería, spa, dentista…). Este bot SÍ agenda
 // videollamadas/visitas, así que las reactivamos acá reusando el mismo cliente
 // de Cal.com ya construido en src/integrations/calcom.ts — sin tocar src/.
 export function memberTools(ctx: MemberToolCtx): Record<string, unknown> {

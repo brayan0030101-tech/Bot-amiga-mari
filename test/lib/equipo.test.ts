@@ -1,10 +1,10 @@
 /**
- * Aviso a Camila (equipo comercial): ficha del lead + canales Telegram/correo.
+ * Aviso a el equipo (equipo comercial): ficha del lead + canales Telegram/correo.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createTestMiniflare } from "../helpers/miniflareSetup";
 import { Db } from "../../src/db/client";
-import { camilaConfigured, notifyCamila, leadFicha, teamTelegramIds, origenCliente } from "../../src/lib/camila";
+import { equipoConfigured, notifyEquipo, leadFicha, teamTelegramIds, origenCliente } from "../../src/lib/equipo";
 import type { Env } from "../../src/env";
 
 let db: Db;
@@ -15,22 +15,22 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("camilaConfigured / notifyCamila", () => {
-  it("sin CAMILA_* no está configurado y no envía nada", async () => {
+describe("equipoConfigured / notifyEquipo", () => {
+  it("sin EQUIPO_* no está configurado y no envía nada", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const env = { TELEGRAM_BOT_TOKEN: "t" } as unknown as Env;
-    expect(camilaConfigured(env)).toBe(false);
-    expect(await notifyCamila(env, { heading: "x", body: "y" })).toBe(false);
+    expect(equipoConfigured(env)).toBe(false);
+    expect(await notifyEquipo(env, { heading: "x", body: "y" })).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("con Telegram manda el aviso al chat de Camila", async () => {
+  it("con Telegram manda el aviso al chat de el equipo", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
-    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", CAMILA_TELEGRAM_CHAT_ID: "999" } as unknown as Env;
-    expect(camilaConfigured(env)).toBe(true);
-    expect(await notifyCamila(env, { heading: "📥 Traspaso", body: "ficha", url: "https://x/admin" })).toBe(true);
+    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", EQUIPO_TELEGRAM_CHAT_ID: "999" } as unknown as Env;
+    expect(equipoConfigured(env)).toBe(true);
+    expect(await notifyEquipo(env, { heading: "📥 Traspaso", body: "ficha", url: "https://x/admin" })).toBe(true);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://api.telegram.org/botTOKEN/sendMessage");
     const body = JSON.parse(init.body);
@@ -39,12 +39,12 @@ describe("camilaConfigured / notifyCamila", () => {
     expect(body.text).toContain("ficha");
   });
 
-  it("admite VARIOS ids (Camila y Maricela): manda el aviso a cada uno", async () => {
+  it("admite VARIOS ids (el equipo): manda el aviso a cada uno", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
-    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", CAMILA_TELEGRAM_CHAT_ID: "111, 222;333" } as unknown as Env;
+    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", EQUIPO_TELEGRAM_CHAT_ID: "111, 222;333" } as unknown as Env;
     expect(teamTelegramIds(env)).toEqual(["111", "222", "333"]);
-    expect(await notifyCamila(env, { heading: "h", body: "b" })).toBe(true);
+    expect(await notifyEquipo(env, { heading: "h", body: "b" })).toBe(true);
     const ids = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).chat_id);
     expect(ids).toEqual(["111", "222", "333"]);
   });
@@ -55,15 +55,15 @@ describe("camilaConfigured / notifyCamila", () => {
       .mockResolvedValueOnce({ ok: false, status: 403 })
       .mockResolvedValueOnce({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
-    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", CAMILA_TELEGRAM_CHAT_ID: "111,222" } as unknown as Env;
-    expect(await notifyCamila(env, { heading: "h", body: "b" })).toBe(true);
+    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", EQUIPO_TELEGRAM_CHAT_ID: "111,222" } as unknown as Env;
+    expect(await notifyEquipo(env, { heading: "h", body: "b" })).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("si Telegram falla devuelve false y no lanza", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400 }));
-    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", CAMILA_TELEGRAM_CHAT_ID: "999" } as unknown as Env;
-    expect(await notifyCamila(env, { heading: "h", body: "b" })).toBe(false);
+    const env = { TELEGRAM_BOT_TOKEN: "TOKEN", EQUIPO_TELEGRAM_CHAT_ID: "999" } as unknown as Env;
+    expect(await notifyEquipo(env, { heading: "h", body: "b" })).toBe(false);
   });
 });
 
@@ -85,7 +85,7 @@ describe("leadFicha", () => {
     await addConv("c1");
     await addLead("c1", "Quiere vivienda", "Ana", { ciudadCompra: "Pereira", ahorroDisponible: "5 mil" }, null, 1);
     await addLead("c1", "Calificación", "Ana Pérez", { ahorroDisponible: "8 mil euros", tipoEmpleo: "empleada" }, "Situación de residencia: residencia permanente", 2);
-    await addLead("c1", "Cita · Videollamada Viventa · 2026-10-21 14:00", "Ana Pérez", { ciudadCompra: "NO DEBE SALIR" }, null, 3);
+    await addLead("c1", "Cita · Videollamada · 2026-10-21 14:00", "Ana Pérez", { ciudadCompra: "NO DEBE SALIR" }, null, 3);
     const f = await leadFicha(db, "c1");
     expect(f).toContain("Nombre: Ana Pérez");
     expect(f).toContain("Quiere comprar en: Pereira");
