@@ -47,7 +47,7 @@ new_sqlite_classes = ["SupportAgent"]
 [[d1_databases]]
 binding = "DB"
 database_name = "horizontes_bot_amiga_mari_db"
-database_id = "{{D1_DATABASE_ID}}"  # PENDIENTE: crear con `wrangler d1 create horizontes_bot_amiga_mari_db` (NO reutilizar el de Viventa)
+database_id = "{{D1_DATABASE_ID}}"  # PENDIENTE: crear con `wrangler d1 create horizontes_bot_amiga_mari_db`
 
 [[vectorize]]
 binding = "KB"
@@ -70,10 +70,10 @@ index_name = "horizontes_bot_amiga_mari_kb"
 
 [vars]
 BOT_NAME = "{{BOT_NAME}}"  # PENDIENTE: nombre del bot / asesora
-BUSINESS_NAME = "Viventa"  # PENDIENTE: confirmar cómo se presenta la asesora
+BUSINESS_NAME = "{{BUSINESS_NAME}}"  # PENDIENTE: nombre del negocio
 BOT_LANGUAGE = "es-MX"
 BOT_TIMEZONE = "Europe/Madrid"  # zona horaria para resolver fechas ("mañana", "el jueves 27")
-# CALCOM_EVENT_TYPE_ID = ""  # PENDIENTE: agenda de la nueva asesora (no usar el 7227219, es de Maricela)
+# CALCOM_EVENT_TYPE_ID = ""  # PENDIENTE: tipo de evento de la agenda de esta asesora
 CALCOM_TIMEZONE = "Europe/Madrid"
 BOT_TIER = "pro"  # 'free' | 'pro'
 LLM_PROVIDER = "anthropic"
@@ -105,7 +105,7 @@ BUFFER_SECONDS = "15"
 # Se llena solo: `forjabot pair` escribe aquí la URL real del worker tras el deploy;
 # y en runtime el bot cae a su propio origin si está vacío (sin edición manual).
 DASHBOARD_BASE_URL = ""  # se llena tras el primer deploy / `forjabot pair`
-# YCLOUD_WA_FROM = ""  # PENDIENTE: número de WhatsApp de la nueva asesora (NO el +34611688609 de Viventa)
+# YCLOUD_WA_FROM = ""  # PENDIENTE: número de WhatsApp de la nueva asesora
 
 # Si TODAS las respuestas de tu bot fallan con 403 "Request not allowed" hacia
 # api.anthropic.com (típico cuando el proveedor del canal manda sus webhooks
