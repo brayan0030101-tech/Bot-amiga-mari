@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { botTimezone, etiquetaHora } from "../time/dateAnchor";
 import {
   calcomConfigured,
   calcomTimeZone,
@@ -57,7 +58,7 @@ export async function getAvailabilityPng(env: Env, mode: AvailabilityMode = "dia
   const days = await loadAvailabilityDays(env, mode);
   if (!days) return null;
   const { svgToPng } = await import("./availability-render");
-  const png = await svgToPng(buildAvailabilitySvg(days, undefined, mode));
+  const png = await svgToPng(buildAvailabilitySvg(days, etiquetaHora(botTimezone(env)), mode));
   cache.set(mode, { at: Date.now(), png });
   return png;
 }

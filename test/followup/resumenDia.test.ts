@@ -108,7 +108,7 @@ describe("runResumenDia", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
     fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
     const now = Date.UTC(2026, 9, 20, 6, 30); // 08:30 en Madrid
@@ -165,7 +165,7 @@ describe("registro por el equipo", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1", BUSINESS_NAME: "la empresa" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1", BUSINESS_NAME: "la empresa", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
     for (const [id, user, name] of [["ycloud:34600000001", "34600000001", "Ana López Ruiz"], ["ycloud:34600000002", "34600000002", "Ana Gómez"], ["ycloud:34600000003", "34600000003", "Luis Pérez"]]) {
       await db.run("INSERT INTO conversations (id, channel, channel_user_id, display_name, started_at, last_message_at) VALUES (?,?,?,?,?,?)", [id, "ycloud", user, name, NOW - 5000, NOW - 5000]);
       await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, notes, metadata, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -253,7 +253,7 @@ describe("Excel de clientes listos (6:00 y 14:00)", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
     fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
     await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('bot_form_url','https://forms.example/f',1)");

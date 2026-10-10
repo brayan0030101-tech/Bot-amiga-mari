@@ -55,3 +55,14 @@ export function dateAnchorBlock(env: Env, now: Date = new Date(), tzOverride?: s
     `</fecha_actual>`
   );
 }
+
+/** Etiqueta legible de la zona horaria para los mensajes ("hora de Bogota"). */
+export function etiquetaHora(tz: string): string {
+  const ciudad = (tz.split("/").pop() || tz).replace(/_/g, " ");
+  return `hora de ${ciudad}`;
+}
+
+/** Hora local (0-23) en la zona dada. */
+export function horaLocal(tz: string, now: number): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hour12: false }).format(new Date(now))) % 24;
+}

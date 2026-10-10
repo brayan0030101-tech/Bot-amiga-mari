@@ -185,14 +185,14 @@ describe("videollamada: recordatorios y resumen", () => {
     return convId;
   }
 
-  it("a ~24 h manda el recordatorio (en ventana, texto libre) con hora de España", async () => {
+  it("a ~24 h manda el recordatorio (en ventana, texto libre) con hora local", async () => {
     // 21 oct 2026 12:00 UTC = 14:00 en Madrid (CEST)
     await seedCita("34600000020", NOW + 23.5 * H, NOW - 5 * 24 * H);
     const r = await runRecordatoriosLlamada(env, NOW);
     expect(r.r24).toBe(1);
     const text = sendOutboundMock.mock.calls[0][1].text as string;
     expect(text).toContain("mañana");
-    expect(text).toContain("(hora de España)");
+    expect(text).toContain("(hora de Madrid)");
     expect(text).toMatch(/\b1[3-9]:\d\d\b/);
     expect((await runRecordatoriosLlamada(env, NOW + 5 * 60_000)).r24).toBe(0);
   });

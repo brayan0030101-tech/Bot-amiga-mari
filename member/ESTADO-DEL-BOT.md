@@ -23,9 +23,9 @@ datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 5. Si usa formulario/CRM/Excel (hoy el código trae un resumen diario, CSV y formulario pensados para otro CRM; se activan solo con ajustes en D1).
 6. Reglas del bot (`custom_instructions`, viven en D1, no en git): escribirlas para esta asesora.
 
-## Cosas del código que aún suponen horario de España (revisar con la zona horaria real)
-`src/followup/sistemaAtencion.ts` y `src/followup/resumenDia.ts` usan `Europe/Madrid` fijo (ventanas 9–21 h, resumen 8:00,
-Excel 6:00/14:00) y el texto «hora de España». `src/media/availability.ts` también.
+
+## Zona horaria
+Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00/14:00, recordatorios) salen de `BOT_TIMEZONE` en `wrangler.toml`. Falta fijarla con la real.
 
 ## Antes del primer deploy
 - `wrangler.toml` tiene `{{D1_DATABASE_ID}}` y `{{BOT_NAME}}`: el preflight bloquea el deploy hasta resolverlos.

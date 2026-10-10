@@ -11,12 +11,12 @@
  *     ventana de 24 h ya está cerrada: en WhatsApp necesita plantilla aprobada
  *     (setting bot_tpl_seguimiento); sin ella no se envía y se avisa.
  *  3. Videollamada con la asesora: recordatorio al cliente 24 h y 1 h antes (hora
- *     de España) y resumen del lead para la asesora 1 h antes. Las citas salen de
+ *     de la zona del bot) y resumen del lead para la asesora 1 h antes. Las citas salen de
  *     los leads "Cita ·" reservados en Cal.com (metadata.calStart, instante exacto).
  *  4. Teléfono de Instagram: Instagram no entrega el número. A quien escribió por
  *     Instagram y no lo ha dado, UN mensaje (texto de la asesora) pidiéndolo y la
  *     hora para llamarle; así ella puede escribirle por WhatsApp. Solo dentro de
- *     la ventana de 24 h de Instagram y en horario de España.
+ *     la ventana de 24 h de Instagram y en horario local.
  *  5. Datos que faltan para el formulario de registro: a quien ya terminó el guion y le
  *     falta apellido, correo, teléfono o ciudades, UN mensaje pidiendo solo eso.
  *
@@ -28,7 +28,7 @@ import { Db } from "../db/client";
 import { MessagesRepo } from "../db/messages";
 import { ConversationsRepo } from "../db/conversations";
 import { SettingsRepo } from "../db/settings";
-import { botTimezone } from "../time/dateAnchor";
+import { botTimezone, etiquetaHora, horaLocal } from "../time/dateAnchor";
 import { selfOrigin } from "../lib/self-origin";
 import { equipoConfigured, notifyEquipo, leadFicha } from "../lib/equipo";
 import { messageOwner } from "../tools/handoffHuman";
@@ -335,7 +335,7 @@ export async function runRecordatoriosLlamada(
       try {
         const ficha = await leadFicha(db, lead.conversation_id);
         const aviso = {
-          heading: `📞 Videollamada a las ${hora} (hora de España)`,
+          heading: `📞 Videollamada a las ${hora} (${etiquetaHora(tz)})`,
           body: `Cliente: ${nombre || "(sin nombre)"}\nFecha: ${fechaEs(inicio, tz)}\n\n${ficha}`,
           url: `${await selfOrigin(env)}/admin`,
         };
@@ -355,7 +355,7 @@ export async function runRecordatoriosLlamada(
     // Recordatorio 24 h: solo si la cita se agendó con ≥ 24 h de antelación.
     if (falta <= 24 * H && falta > 2 * H && lead.created_at <= inicio - 24 * H && (await claim(db, "leads", lead.id, "bot_r24", now))) {
       const text =
-        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 Te recuerdo que mañana tienes tu videollamada con nuestra asesora a las ${hora} (hora de España). ` +
+        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 Te recuerdo que mañana tienes tu videollamada con nuestra asesora a las ${hora} (${etiquetaHora(tz)}). ` +
         `¿Sigue en pie, o prefieres reprogramarla?`;
       try {
         await enviarACliente(env, db, ref, text, { setting: TPL_RECORDATORIO, params: [nombre || "hola", hora] }, lastUser, now);
@@ -368,7 +368,7 @@ export async function runRecordatoriosLlamada(
     // Recordatorio 1 h antes.
     if (falta <= H && lead.created_at <= inicio - H && (await claim(db, "leads", lead.id, "bot_r1", now))) {
       const text =
-        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 En una hora, a las ${hora} (hora de España), es tu videollamada con nuestra asesora. ¡Te esperamos!`;
+        `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 En una hora, a las ${hora} (${etiquetaHora(tz)}), es tu videollamada con nuestra asesora. ¡Te esperamos!`;
       try {
         await enviarACliente(env, db, ref, text, { setting: TPL_RECORDATORIO, params: [nombre || "hola", hora] }, lastUser, now);
         out.r1++;
@@ -388,9 +388,9 @@ async function falloRecordatorio(env: Env, cuando: string, quien: string, hora: 
   console.error(`[sistemaAtencion] recordatorio ${cuando} a ${quien}: ${motivo}`);
   await messageOwner(env, {
     heading: `⚠️ Recordatorio de ${cuando} NO enviado`,
-    body: `Cliente: ${quien}\nVideollamada a las ${hora} (hora de España)\nMotivo: ${motivo}.\nAvísale tú, por favor.`,
+    body: `Cliente: ${quien}\nVideollamada a las ${hora} (${etiquetaHora(botTimezone(env))})\nMotivo: ${motivo}.\nAvísale tú, por favor.`,
   }).catch(() => undefined);
-  await avisarEquipo(env, `⚠️ Recordatorio de ${cuando} NO enviado`, `Cliente: ${quien} · videollamada a las ${hora} (hora de España). ${motivo}.`);
+  await avisarEquipo(env, `⚠️ Recordatorio de ${cuando} NO enviado`, `Cliente: ${quien} · videollamada a las ${hora} (${etiquetaHora(botTimezone(env))}). ${motivo}.`);
 }
 
 /** Corre los tres automatismos; cada uno es independiente. */
@@ -413,10 +413,8 @@ const MAX_IDLE_TEL = 22 * H;
 const MAX_POR_PASADA_TEL = 5;
 
 export async function runPedirTelefono(env: Env, now = Date.now()): Promise<{ sent: number }> {
-  const horaMadrid = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Madrid", hour: "2-digit", hour12: false }).format(new Date(now)),
-  );
-  if (horaMadrid < 9 || horaMadrid >= 21) return { sent: 0 };
+  const hLocal = horaLocal(botTimezone(env), now);
+  if (hLocal < 9 || hLocal >= 21) return { sent: 0 };
 
   const db = new Db(env.DB);
   const convs = await db.all<ConvRef>(
@@ -511,10 +509,8 @@ const MAX_POR_PASADA_DATOS = 5;
 const VENTANA_DATOS: Record<string, number> = { ycloud: 23 * H, zernio: 22 * H };
 
 export async function runPedirDatos(env: Env, now = Date.now()): Promise<{ sent: number }> {
-  const horaMadrid = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Madrid", hour: "2-digit", hour12: false }).format(new Date(now)),
-  );
-  const enHorario = horaMadrid >= 9 && horaMadrid < 21;
+  const hLocal = horaLocal(botTimezone(env), now);
+  const enHorario = hLocal >= 9 && hLocal < 21;
 
   const db = new Db(env.DB);
   const { leadsPendientes, faltantes, enlaceRegistro } = await import("./resumenDia");

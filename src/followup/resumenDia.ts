@@ -1,5 +1,5 @@
 /**
- * Resumen diario para la asesora , una vez al día a las 8:00 de España:
+ * Resumen diario para la asesora , una vez al día a las 8:00 (hora local):
  *
  *  1. Mensaje de Telegram con los leads de las últimas 24 h ordenados por
  *     prioridad (🔥 caliente / 🟡 tibio / ⚪ frío): a quién llamar primero, con
@@ -16,6 +16,7 @@ import { SettingsRepo } from "../db/settings";
 import { selfOrigin } from "../lib/self-origin";
 import { equipoConfigured, notifyEquipo, notifyEquipoDocument } from "../lib/equipo";
 import { buildXlsx, type Celda } from "../lib/xlsx";
+import { botTimezone } from "../time/dateAnchor";
 
 const H = 3600_000;
 const MAX_LINEAS = 15;
@@ -302,14 +303,14 @@ export function csvZoho(leads: LeadResumen[]): string {
 
 // ─── Cron ──────────────────────────────────────────────────────────────────────
 
-function madridParts(now: number): { hora: number; dia: string } {
-  const f = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false });
+function zonaParts(tz: string, now: number): { hora: number; dia: string } {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false });
   const p = Object.fromEntries(f.formatToParts(new Date(now)).map((x) => [x.type, x.value]));
   return { hora: Number(p.hour) % 24, dia: `${p.year}-${p.month}-${p.day}` };
 }
 
 export async function runResumenDia(env: Env, now = Date.now()): Promise<{ sent: boolean; leads: number }> {
-  const { hora, dia } = madridParts(now);
+  const { hora, dia } = zonaParts(botTimezone(env), now);
   if (hora !== 8 || !equipoConfigured(env)) return { sent: false, leads: 0 };
 
   const db = new Db(env.DB);
@@ -473,7 +474,7 @@ export async function comandoEquipo(env: Env, texto: string, now = Date.now()): 
   return AYUDA_EQUIPO;
 }
 
-// ─── Excel de clientes listos (6:00 y 14:00 de España) ─────────────────────────
+// ─── Excel de clientes listos (6:00 y 14:00 (hora local)) ─────────────────────────
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const HORAS_EXCEL = [6, 14];
@@ -524,12 +525,12 @@ export function excelListos(leads: LeadResumen[], formUrl?: string): Uint8Array 
 }
 
 /**
- * A las 6:00 y 14:00 de España manda a el equipo el Excel con los clientes
+ * A las 6:00 y 14:00 (hora local) manda a el equipo el Excel con los clientes
  * que ya están listos para el formulario (los nuevos desde el último envío). Si no
  * hay nuevos, un aviso corto. Una vez por franja y día.
  */
 export async function runExcelListos(env: Env, now = Date.now()): Promise<{ sent: boolean; leads: number }> {
-  const { hora, dia } = madridParts(now);
+  const { hora, dia } = zonaParts(botTimezone(env), now);
   if (!HORAS_EXCEL.includes(hora) || !equipoConfigured(env)) return { sent: false, leads: 0 };
 
   const db = new Db(env.DB);
