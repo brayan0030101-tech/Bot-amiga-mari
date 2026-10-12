@@ -2,8 +2,8 @@
 // NUNCA se sobrescribe al actualizar el bot.
 
 export const memberConfig = {
-  businessName: "PENDIENTE",
-  botName: "PENDIENTE",
+  businessName: "Bekai Colombia",
+  botName: "Verónica",
   language: "es" as "es" | "en" | "pt",
   tier: "pro" as "free" | "pro",
   timezone: "Europe/Madrid",
@@ -22,7 +22,10 @@ export const businessConfig = {
   contactPhone: "",
   // PENDIENTE: llenar con los datos reales de la asesora (qué hace, qué ofrece, tono,
   // preguntas frecuentes, reglas de escalación). No copiar datos de otro negocio.
-  customFields: {} as Record<string, string>,
+  customFields: {
+    asesora: "Verónica Rivera",
+    marca: "Bekai Colombia",
+  } as Record<string, string>,
 };
 
 import type { CommentFunnel } from "../src/channels/comment-funnel";

@@ -69,8 +69,8 @@ index_name = "horizontes_bot_amiga_mari_kb"
 # bucket_name = "horizontes-bot-media"
 
 [vars]
-BOT_NAME = "{{BOT_NAME}}"  # PENDIENTE: nombre del bot / asesora
-BUSINESS_NAME = "{{BUSINESS_NAME}}"  # PENDIENTE: nombre del negocio
+BOT_NAME = "Verónica"  # asesora; el bot habla como "el equipo comercial de Verónica Rivera"
+BUSINESS_NAME = "Bekai Colombia"
 BOT_LANGUAGE = "es-MX"
 BOT_TIMEZONE = "Europe/Madrid"  # zona horaria para resolver fechas ("mañana", "el jueves 27")
 # CALCOM_EVENT_TYPE_ID = ""  # PENDIENTE: tipo de evento de la agenda de esta asesora

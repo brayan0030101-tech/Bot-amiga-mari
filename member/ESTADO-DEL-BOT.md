@@ -11,12 +11,14 @@ Forja, el comportamiento y la naturalidad del bot (guion de 13 mensajes y tono).
 datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 
 ## Decidido
+- Asesora: **Verónica Rivera**. Marca: **Bekai Colombia**. El bot habla como «el equipo comercial de Verónica Rivera» (`BOT_NAME = Verónica`; cambiar si ella prefiere otro nombre para el bot).
+- Verónica trabaja también como asesora de otra empresa: este bot no la menciona ni comparte nada con ella salvo que ella lo pida.
 - Mismo guion de calificación (13 mensajes) y mismo tono; luego se adapta.
 - Canal: **WhatsApp**. Avisos de leads calificados por **Telegram** (`EQUIPO_TELEGRAM_CHAT_ID`, varios ids separados por coma).
 - Misma cuenta de Cloudflare de Brayan, con **su propia base de datos** y su propio índice Vectorize.
 
 ## Pendiente (Brayan aún no lo define)
-1. Nombre de la asesora y del bot, nombre del negocio y cómo se presenta (`BOT_NAME`, `BUSINESS_NAME`, `member/config.local.ts`).
+1. Confirmar si el bot lleva un nombre propio distinto de «Verónica».
 2. Número de WhatsApp y proveedor, y su webhook.
 3. Agenda (Cal.com, horario, duración).
 4. Ids de Telegram de quienes reciben los avisos.
