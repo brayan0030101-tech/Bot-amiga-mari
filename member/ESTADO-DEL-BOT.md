@@ -31,4 +31,5 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 
 ## Antes del primer deploy
 - Creados en Cloudflare (12 oct): D1 `horizontes_bot_amiga_mari_db` (WEUR) y Vectorize `horizontes_bot_amiga_mari_kb` (1024, cosine). El ID de D1 ya está en `wrangler.toml`.
-- Falta: aplicar el esquema (`db:apply:remote`), poner los secretos del worker con `wrangler secret put` y desplegar (pedir permiso a Brayan).
+- Esquema aplicado a D1 (12 oct, con `cf d1 raw`: 29 tablas).
+- Falta: poner los secretos del worker con `wrangler secret put` y desplegar (pedir permiso a Brayan).
