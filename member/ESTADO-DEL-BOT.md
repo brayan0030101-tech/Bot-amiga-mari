@@ -30,5 +30,5 @@ datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00/14:00, recordatorios) salen de `BOT_TIMEZONE` en `wrangler.toml`. Decidido: **Europe/Madrid** (la misma que usa el bot de referencia), en `BOT_TIMEZONE`, `CALCOM_TIMEZONE` y `member/config.local.ts`.
 
 ## Antes del primer deploy
-- `wrangler.toml` tiene `{{D1_DATABASE_ID}}` y `{{BOT_NAME}}`: el preflight bloquea el deploy hasta resolverlos.
-- Crear D1 y Vectorize propios (`wrangler d1 create horizontes_bot_amiga_mari_db`); secretos con `wrangler secret put`.
+- Creados en Cloudflare (12 oct): D1 `horizontes_bot_amiga_mari_db` (WEUR) y Vectorize `horizontes_bot_amiga_mari_kb` (1024, cosine). El ID de D1 ya está en `wrangler.toml`.
+- Falta: aplicar el esquema (`db:apply:remote`), poner los secretos del worker con `wrangler secret put` y desplegar (pedir permiso a Brayan).
