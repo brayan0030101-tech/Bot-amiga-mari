@@ -39,3 +39,9 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Secretos puestos: `ANTHROPIC_API_KEY` (la llave de Bekai), `DASHBOARD_PASSWORD`, `KB_REINDEX_TOKEN`.
 - Crons activos: 3:00 UTC (limpieza) y cada 5 min (vigilante).
 - Aún **no recibe clientes**: falta conectar WhatsApp (punto 2 de Pendiente) y los avisos por Telegram (punto 4).
+
+## WhatsApp por Zernio (en curso, 14 oct)
+- Hecho: `ZERNIO_WEBHOOK_SECRET` puesto en el worker (valor solo en la sesión, no en git). La ruta `/webhooks/zernio` ya rechaza lo no firmado (403).
+- Cómo conecta Forja: Zernio manda `message.received` firmado (`X-Zernio-Signature`, HMAC-SHA256) a `/webhooks/zernio`; el bot guarda `conversationId` + `accountId` en `zernio_ctx` y responde con `POST /api/v1/inbox/conversations/{id}/messages` (`{accountId, message}`). Fuera de 24 h usa plantilla (panel → Plantillas).
+- **Independencia:** en Zernio los webhooks son de todo el equipo; si la cuenta de Zernio es la misma del otro negocio, este bot recibiría también sus mensajes (y al revés). Por eso: perfil de Zernio propio para Bekai/Verónica, webhook con `profileIds` = ese perfil, y API key con `scope: "profiles"` limitada a ese perfil. Revisar que el webhook del otro bot también esté limitado a su perfil.
+- Falta (Brayan): conectar el WhatsApp en ese perfil y pasar la API key (con el grupo `messages`). Luego: `ZERNIO_API_KEY` en el worker, registrar el webhook (`POST /api/v1/webhooks/settings`) y probar con un WhatsApp real.
