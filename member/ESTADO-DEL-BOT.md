@@ -19,7 +19,7 @@ datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 
 ## Pendiente (Brayan aún no lo define)
 1. Confirmar si el bot lleva un nombre propio distinto de «Verónica».
-2. Número de WhatsApp y proveedor, y su webhook.
+2. Número de WhatsApp (proveedor decidido: **Zernio**, ver abajo). Falta que Brayan conecte el número.
 3. Agenda (Cal.com, horario, duración).
 4. Ids de Telegram de quienes reciben los avisos.
 5. Si usa formulario/CRM/Excel (hoy el código trae un resumen diario, CSV y formulario pensados para otro CRM; se activan solo con ajustes en D1).
@@ -33,3 +33,11 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Creados en Cloudflare (12 oct): D1 `horizontes_bot_amiga_mari_db` (WEUR) y Vectorize `horizontes_bot_amiga_mari_kb` (1024, cosine). El ID de D1 ya está en `wrangler.toml`.
 - Esquema aplicado a D1 (12 oct, con `cf d1 raw`: 29 tablas).
 - Falta: poner los secretos del worker con `wrangler secret put` y desplegar (pedir permiso a Brayan).
+
+## Zernio (WhatsApp) — 14 oct
+- Cuenta de Zernio **nueva y propia** de este bot (perfil `Default`, id `6acff7de6da9cce8f379aa51`).
+- Worker `forja-amiga-mari` ya desplegado en `https://forja-amiga-mari.brayan0030101.workers.dev`.
+- Secretos puestos en el worker: `ZERNIO_API_KEY` y `ZERNIO_WEBHOOK_SECRET` (este último regenerado el 14 oct; el valor solo vive en Cloudflare y en Zernio).
+- Webhook registrado en Zernio (id `6acffd26e378e11b5ee395db`): `/webhooks/zernio`, evento `message.received`. Evento de prueba entregado y aceptado (0 fallos).
+- **Falta (Brayan):** conectar el número de WhatsApp en Zernio con el registro de Meta (Embedded Signup). Se hace desde el dashboard de Zernio → Connect → WhatsApp, o con un enlace que genera Claude (`GET /v1/connect/whatsapp?profileId=…&signup=hosted&language=es`, dura 60 min). Ahí elige: mantener el número también en la app WhatsApp Business (coexistencia) o solo API.
+- Después de conectar: escribir al número desde otro teléfono y revisar que el bot conteste; configurar la plantilla de reenganche (fuera de 24 h) en **Plantillas** del panel.
