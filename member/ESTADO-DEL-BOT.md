@@ -40,8 +40,10 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Crons activos: 3:00 UTC (limpieza) y cada 5 min (vigilante).
 - Aún **no recibe clientes**: falta conectar WhatsApp (punto 2 de Pendiente) y los avisos por Telegram (punto 4).
 
-## WhatsApp por Zernio (en curso, 14 oct)
-- Hecho: `ZERNIO_WEBHOOK_SECRET` puesto en el worker (valor solo en la sesión, no en git). La ruta `/webhooks/zernio` ya rechaza lo no firmado (403).
-- Cómo conecta Forja: Zernio manda `message.received` firmado (`X-Zernio-Signature`, HMAC-SHA256) a `/webhooks/zernio`; el bot guarda `conversationId` + `accountId` en `zernio_ctx` y responde con `POST /api/v1/inbox/conversations/{id}/messages` (`{accountId, message}`). Fuera de 24 h usa plantilla (panel → Plantillas).
-- **Independencia:** decidido (14 oct): **cuenta de Zernio propia solo para Verónica**, separada de la del otro negocio. Así ningún mensaje se cruza entre bots (en Zernio los webhooks son de toda la cuenta).
-- Falta (Brayan): crear la cuenta, conectar el WhatsApp y pasar la API key (con el grupo `messages`). Luego: `ZERNIO_API_KEY` en el worker, registrar el webhook (`POST /api/v1/webhooks/settings`) y probar con un WhatsApp real.
+## WhatsApp por YCloud (en curso, 14 oct)
+- Decidido: **YCloud** (no Zernio). Motivo: solo hace falta WhatsApp; YCloud tiene plan gratis sin comisión sobre Meta, **coexistencia** (Verónica sigue usando su app de WhatsApp Business y el bot se calla cuando ella contesta) y notas de voz/imágenes ya probadas en Forja.
+- **Cuenta de YCloud propia solo para Verónica**, separada del otro negocio.
+- El secreto de Zernio que se había puesto se borró.
+- Webhook: `https://forja-amiga-mari.brayan0030101.workers.dev/webhooks/ycloud`, eventos `whatsapp.inbound_message.received` y `whatsapp.smb.message.echoes`. Hoy rechaza lo no firmado (403).
+- Falta (Brayan): crear la cuenta, conectar el número en coexistencia (QR con la app de WhatsApp Business 2.24.17+), API key y webhook. Pasar: API key, signing secret del webhook y número en E.164.
+- Luego (Claude): `YCLOUD_API_KEY` y `YCLOUD_WEBHOOK_SECRET` como secretos, `YCLOUD_WA_FROM` en `wrangler.toml`, desplegar y probar con un WhatsApp real (incluida la coexistencia). Si la IA responde 403 «Request not allowed», poner `AGENT_LOCATION_HINT = "enam"`.
