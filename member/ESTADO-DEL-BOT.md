@@ -19,7 +19,7 @@ datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 
 ## Pendiente (Brayan aún no lo define)
 1. Confirmar si el bot lleva un nombre propio distinto de «Verónica».
-2. Número de WhatsApp (proveedor decidido: **Zernio**, ver abajo). Falta que Brayan conecte el número.
+2. ~~Número de WhatsApp~~ — conectado por Zernio (ver abajo).
 3. Agenda (Cal.com, horario, duración).
 4. Ids de Telegram de quienes reciben los avisos.
 5. Si usa formulario/CRM/Excel (hoy el código trae un resumen diario, CSV y formulario pensados para otro CRM; se activan solo con ajustes en D1).
@@ -39,5 +39,6 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Worker `forja-amiga-mari` ya desplegado en `https://forja-amiga-mari.brayan0030101.workers.dev`.
 - Secretos puestos en el worker: `ZERNIO_API_KEY` y `ZERNIO_WEBHOOK_SECRET` (este último regenerado el 14 oct; el valor solo vive en Cloudflare y en Zernio).
 - Webhook registrado en Zernio (id `6acffd26e378e11b5ee395db`): `/webhooks/zernio`, evento `message.received`. Evento de prueba entregado y aceptado (0 fallos).
-- **Falta (Brayan):** conectar el número de WhatsApp en Zernio con el registro de Meta (Embedded Signup). Se hace desde el dashboard de Zernio → Connect → WhatsApp, o con un enlace que genera Claude (`GET /v1/connect/whatsapp?profileId=…&signup=hosted&language=es`, dura 60 min). Ahí elige: mantener el número también en la app WhatsApp Business (coexistencia) o solo API.
+- **WhatsApp conectado (14 oct, 22:12 UTC):** número **+34 666 47 81 06**, nombre visible «Beka», en **coexistencia** (el número sigue también en la app WhatsApp Business). Zernio accountId `6acffe40deb2a0a2be6ca500`, WABA `431006643434598`, phoneNumberId `471975339332476`, límite TIER_250.
+- **Pendiente en Meta:** Zernio marca «Can't start conversations — error con el método de pago». Falta añadir un método de pago a la cuenta de WhatsApp Business en Meta (WhatsApp Manager). Sin eso el bot sí responde a quien escriba, pero no puede abrir conversaciones con plantilla (reenganche fuera de 24 h). Nombre y verificación de empresa: «no revisado / no verificado».
 - Después de conectar: escribir al número desde otro teléfono y revisar que el bot conteste; configurar la plantilla de reenganche (fuera de 24 h) en **Plantillas** del panel.
