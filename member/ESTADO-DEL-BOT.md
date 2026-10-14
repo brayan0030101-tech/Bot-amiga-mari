@@ -32,4 +32,10 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 ## Antes del primer deploy
 - Creados en Cloudflare (12 oct): D1 `horizontes_bot_amiga_mari_db` (WEUR) y Vectorize `horizontes_bot_amiga_mari_kb` (1024, cosine). El ID de D1 ya está en `wrangler.toml`.
 - Esquema aplicado a D1 (12 oct, con `cf d1 raw`: 29 tablas).
-- Falta: poner los secretos del worker con `wrangler secret put` y desplegar (pedir permiso a Brayan).
+
+## Desplegado (14 oct)
+- Worker `forja-amiga-mari` publicado: https://forja-amiga-mari.brayan0030101.workers.dev (`/health` responde `ok`).
+- Panel: https://forja-amiga-mari.brayan0030101.workers.dev/admin (usuario `admin`; la contraseña se le dio a Brayan, no está en git).
+- Secretos puestos: `ANTHROPIC_API_KEY` (la llave de Bekai), `DASHBOARD_PASSWORD`, `KB_REINDEX_TOKEN`.
+- Crons activos: 3:00 UTC (limpieza) y cada 5 min (vigilante).
+- Aún **no recibe clientes**: falta conectar WhatsApp (punto 2 de Pendiente) y los avisos por Telegram (punto 4).
