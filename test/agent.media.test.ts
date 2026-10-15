@@ -555,7 +555,7 @@ describe("SupportAgent.ingest — bot_paused (settings)", () => {
     vi.restoreAllMocks();
   });
 
-  it("buffers the client message but does NOT arm the alarm when bot_paused=1", async () => {
+  it("does NOT buffer nor arm the alarm when bot_paused=1 (nothing piles up for reactivation)", async () => {
     stubSettings({ bot_paused: "1" });
     const { agent, storage } = makeAgent({ tier: "free" });
     stubConversations();
@@ -566,10 +566,9 @@ describe("SupportAgent.ingest — bot_paused (settings)", () => {
       text: "hola, estoy pausado?",
     });
 
-    // Message is persisted in the buffer …
-    expect(agent.state.pendingMessages).toHaveLength(1);
-    expect(agent.state.pendingMessages[0].text).toBe("hola, estoy pausado?");
-    // … but the bot stays silent: no alarm scheduled.
+    // Nothing stays in the buffer (it would be answered in bulk on reactivation) …
+    expect(agent.state.pendingMessages).toHaveLength(0);
+    // … and the bot stays silent: no alarm scheduled.
     expect(storage.setAlarm).not.toHaveBeenCalled();
   });
 

@@ -5,6 +5,7 @@ import { pickAdapter, sendChunkedReply } from "../replies/sender";
 import type { ChannelId } from "../channels/shared";
 import { botTimezone } from "../time/dateAnchor";
 import { chunkReply } from "../replies/chunker";
+import { resolveAgentConfig } from "../settings-loader";
 
 /**
  * Recordatorio del día anterior para citas agendadas (Outlet / videollamada)
@@ -52,6 +53,8 @@ export async function sendAppointmentReminders(
   env: Env,
   now = new Date(),
 ): Promise<AppointmentReminderResult> {
+  // Pausa global del bot: no se le escribe a ningún cliente.
+  if ((await resolveAgentConfig(env, [])).botPaused) return { sent: 0 };
   const db = new Db(env.DB);
   const tz = botTimezone(env);
   const tomorrow = addDaysIso(isoDateInTz(now, tz), 1);

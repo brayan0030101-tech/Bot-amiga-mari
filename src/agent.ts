@@ -246,6 +246,18 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
       return { acknowledged: true };
     }
 
+    // Resolve effective config (D1 settings overlaid on env defaults).
+    // Pausa GLOBAL del bot (panel → Agente → Pausar): se comprueba aquí, ANTES
+    // del anti-spam, del aviso de archivo recibido y del buffer. Antes se miraba
+    // después y esos avisos salían igual con el bot pausado; además el mensaje
+    // quedaba en el buffer y, al reactivar, el bot contestaba todo lo acumulado.
+    // El mensaje se registra igual para que el equipo lo vea en el panel.
+    const cfg = await resolveAgentConfig(this.env, []);
+    if (cfg.botPaused) {
+      await this.recordWithoutReplying(db, conv.id, processedText, media.mediaIds);
+      return { acknowledged: true };
+    }
+
     // Keyword del modo evento (QUIERO/RECURSOS): se cuenta para el embudo y el
     // mensaje SIGUE su camino al agente (LLM) — el playbook de qué hacer con la
     // keyword vive en el system prompt. Solo le quitamos la espera del buffer.
@@ -356,21 +368,6 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
       // el campo — leerlo a secas revienta con "not iterable".
       pendingMediaIds: [...(this.state.pendingMediaIds ?? []), ...media.mediaIds],
     });
-
-    // Resolve effective config (D1 settings overlaid on env defaults).
-    // We need at least bot_paused (to decide whether to reply) and the buffer.
-    const cfg = await resolveAgentConfig(this.env, []);
-
-    // Owner paused the bot via the dashboard → keep the message buffered but
-    // stay silent: do NOT arm the alarm, so alarm() never runs.
-    // Mismo hueco que la pausa por conversación: el mensaje solo vivía en
-    // pendingMessages (estado del DO), que el panel no ve — el dueño no tenía cómo
-    // leer lo que entró con el bot apagado. Se queda en buffer (igual) y ahora
-    // también se registra.
-    if (cfg.botPaused) {
-      await this.recordWithoutReplying(db, conv.id, processedText, media.mediaIds);
-      return { acknowledged: true };
-    }
 
     // Schedule buffer processing via the agents SDK scheduler.
     // The SDK overrides alarm() to dispatch named callbacks from its

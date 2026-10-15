@@ -577,12 +577,21 @@ export async function runPedirDatos(env: Env, now = Date.now()): Promise<{ sent:
 }
 
 export async function runSistemaAtencion(env: Env, now = Date.now()): Promise<void> {
+  // Pausa global del bot: nada que le escriba al cliente (seguimientos,
+  // recordatorios, pedir teléfono/datos). El resumen y el Excel son internos
+  // del equipo y siguen.
+  const { resolveAgentConfig } = await import("../settings-loader");
+  const cfg = await resolveAgentConfig(env, []);
+  if (!cfg.botPaused) await runAlCliente(env, now);
+  const { runResumenDia, runExcelListos } = await import("./resumenDia");
+  await runResumenDia(env, now).catch((e) => console.error("[sistemaAtencion] resumen:", e));
+  await runExcelListos(env, now).catch((e) => console.error("[sistemaAtencion] excel:", e));
+}
+
+async function runAlCliente(env: Env, now: number): Promise<void> {
   await runGuionSeguimiento(env, now).catch((e) => console.error("[sistemaAtencion] guion:", e));
   await runSeguimientoProyectos(env, now).catch((e) => console.error("[sistemaAtencion] proyectos:", e));
   await runRecordatoriosLlamada(env, now).catch((e) => console.error("[sistemaAtencion] llamada:", e));
   await runPedirTelefono(env, now).catch((e) => console.error("[sistemaAtencion] teléfono:", e));
   await runPedirDatos(env, now).catch((e) => console.error("[sistemaAtencion] datos:", e));
-  const { runResumenDia, runExcelListos } = await import("./resumenDia");
-  await runResumenDia(env, now).catch((e) => console.error("[sistemaAtencion] resumen:", e));
-  await runExcelListos(env, now).catch((e) => console.error("[sistemaAtencion] excel:", e));
 }
