@@ -17,7 +17,7 @@ datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 - Canal: **WhatsApp**. Avisos de leads calificados por **Telegram** (`EQUIPO_TELEGRAM_CHAT_ID`, varios ids separados por coma).
 - Misma cuenta de Cloudflare de Brayan, con **su propia base de datos** y su propio índice Vectorize.
 
-## Decidido el 23 nov (plan «mismo enfoque que el bot de Maricela», aprobado)
+## Decidido el 23 nov (plan «mismo enfoque que el bot de la otra asesora», aprobado)
 - Verónica trabaja en la **misma empresa y el mismo Zoho** que la otra asesora: mismas integraciones, automatizaciones y CRM, pero con sus propios permisos de Zoho, su función `enviar_formulario_bot`, su Cal.com, sus avisos y sus datos. Nada de la otra asesora (clientes, conversaciones, llaves, nombres) entra aquí.
 - Se **mantiene la regla**: el bot nunca responde ni escribe a números de Colombia (+57 ni usuarios «CO.…»). Ojo: las pruebas desde un número colombiano no recibirán respuesta.
 - Fuera: oferta de seguros ERGO|DKV.

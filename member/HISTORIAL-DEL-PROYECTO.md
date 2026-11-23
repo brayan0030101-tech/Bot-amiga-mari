@@ -21,9 +21,9 @@
 - Con la pausa puesta salió igual un mensaje automático («pedir teléfono») a 4 chats: el sistema de atención no miraba la pausa.
 - Arreglo desplegado: con la pausa general no sale nada al cliente (automatismos, recordatorio de citas, aviso de mensaje repetido, aviso de archivo) y los mensajes recibidos no se acumulan para contestarse al reactivar. Prueba actualizada (`test/agent.media.test.ts`).
 
-## 23 de noviembre de 2026 — paso 0 del plan «mismo enfoque que el bot de Maricela»
+## 23 de noviembre de 2026 — paso 0 del plan «mismo enfoque que el bot de la otra asesora»
 - Revisión completa de los dos repositorios (tabla «Ya está / Falta / Se deja fuera» entregada a Brayan) y plan aprobado.
-- Decisiones de Brayan: Verónica usa **el mismo Zoho** de la empresa que Maricela (con sus propios permisos y su función `enviar_formulario_bot`); se **mantiene la regla de no responder ni escribir nunca a números de Colombia** (+57 y usuarios «CO.…»); se deja fuera la oferta de seguros ERGO|DKV.
+- Decisiones de Brayan: Verónica usa **el mismo Zoho** de la empresa que la otra asesora (con sus propios permisos y su función `enviar_formulario_bot`); se **mantiene la regla de no responder ni escribir nunca a números de Colombia** (+57 y usuarios «CO.…»); se deja fuera la oferta de seguros ERGO|DKV.
 - La rama de trabajo de octubre (Zernio y arreglo de la pausa) se lleva a `main`, que estaba atrasada respecto de lo desplegado.
 - Creado este historial.
 - Pendiente de Brayan: pasar el repositorio a **privado** (GitHub → Settings → Danger Zone → Change visibility). No hay herramienta en la sesión para hacerlo.
