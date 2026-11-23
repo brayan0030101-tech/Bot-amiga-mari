@@ -12,10 +12,19 @@ datos no debe aparecer ningún nombre, número ni recurso de otro negocio.
 
 ## Decidido
 - Asesora: **Verónica Rivera**. Marca: **Bekai Colombia**. El bot habla como «el equipo comercial de Verónica Rivera» (`BOT_NAME = Verónica`; cambiar si ella prefiere otro nombre para el bot).
-- Verónica trabaja también como asesora de otra empresa: este bot no la menciona ni comparte nada con ella salvo que ella lo pida.
+- (Corregido el 23 nov: Verónica es asesora de la misma empresa y usa el mismo Zoho; ver «Decidido el 23 nov».)
 - Mismo guion de calificación (13 mensajes) y mismo tono; luego se adapta.
 - Canal: **WhatsApp**. Avisos de leads calificados por **Telegram** (`EQUIPO_TELEGRAM_CHAT_ID`, varios ids separados por coma).
 - Misma cuenta de Cloudflare de Brayan, con **su propia base de datos** y su propio índice Vectorize.
+
+## Decidido el 23 nov (plan «mismo enfoque que el bot de Maricela», aprobado)
+- Verónica trabaja en la **misma empresa y el mismo Zoho** que la otra asesora: mismas integraciones, automatizaciones y CRM, pero con sus propios permisos de Zoho, su función `enviar_formulario_bot`, su Cal.com, sus avisos y sus datos. Nada de la otra asesora (clientes, conversaciones, llaves, nombres) entra aquí.
+- Se **mantiene la regla**: el bot nunca responde ni escribe a números de Colombia (+57 ni usuarios «CO.…»). Ojo: las pruebas desde un número colombiano no recibirán respuesta.
+- Fuera: oferta de seguros ERGO|DKV.
+- Orden: 0 orden de la casa → 1 fiabilidad del núcleo → 2 reglas del bot → 3 CRM sin Zoho → 4 Zoho (lectura; escritura apagada) → 5 automatizaciones a clientes (todas apagadas) → 6 Cal.com y Telegram → 7 piloto con un caso real y reactivación. El bot sigue en pausa general durante todo el trabajo.
+- Todo lo que actúe sobre clientes o escriba en Zoho nace apagado. Desplegar, poner llaves o escribir en el CRM real: con permiso de Brayan. Cada cambio deja entrada en `HISTORIAL-DEL-PROYECTO.md`.
+- WhatsApp es por **Zernio** (no YCloud): lo que en el otro bot depende de YCloud (plantillas, fallos de Meta, saldo, sincronizar la app) se adapta a Zernio o se deja fuera.
+- Repositorio: debe pasar a **privado** (lo hace Brayan en GitHub).
 
 ## Pendiente (Brayan aún no lo define)
 1. Confirmar si el bot lleva un nombre propio distinto de «Verónica».
