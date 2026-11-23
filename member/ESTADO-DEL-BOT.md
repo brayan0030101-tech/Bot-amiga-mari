@@ -58,3 +58,8 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - **Para reactivar:** panel → Agente → «Reactivar bot» (o poner `bot_paused = 0`).
 - **15 oct:** con la pausa puesta igual salió el mensaje fijo «Hola 😊 Muchas gracias por escribirme… ¿me puedes enviar tu número?» a 4 chats de WhatsApp (+34 608 50 24 30, +34 623 32 20 56, +34 658 75 36 49, +34 664 27 73 06). Venía del automatismo «pedir teléfono» (`followup/sistemaAtencion.ts`, cron cada 15 min), que no miraba la pausa general.
 - **Arreglado y desplegado (15 oct, 12:11 UTC, versión `2efd629a`):** con la pausa general ya no sale nada al cliente: ni los automatismos del sistema de atención, ni el recordatorio de citas, ni el aviso de mensaje repetido, ni el de archivo recibido. Los mensajes recibidos se guardan en el panel pero ya no se acumulan para contestarse al reactivar. Resumen diario y Excel internos siguen. No se tocó Zernio, webhook, secretos ni variables.
+
+## Paso 1 (23 nov) — en la rama de trabajo, SIN desplegar
+- Fiabilidad del núcleo traída y adaptada a Zernio (detalle en `HISTORIAL-DEL-PROYECTO.md`). Lo desplegado sigue siendo la versión del 15 oct hasta que Brayan autorice desplegar.
+- Ajustes nuevos (D1, todos opcionales): `agenda_dias_bloqueados`, `bot_botones`.
+

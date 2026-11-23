@@ -92,3 +92,61 @@ describe("zernio · verifyZernioSignature", () => {
     expect(await verifyZernioSignature(body, null, secret)).toBe(false);
   });
 });
+
+describe("zernio · regla de Colombia y botones", () => {
+  const wa = (senderId: string, extra: Record<string, unknown> = {}) => ({
+    ...REAL,
+    message: { ...REAL.message, platform: "whatsapp", sender: { ...REAL.message.sender, id: senderId }, ...extra },
+  });
+
+  it("ignora lo que llega de un número de Colombia por WhatsApp", () => {
+    expect(parseZernioEvents(wa("573138804992") as any)).toEqual([]);
+  });
+
+  it("sí procesa a un cliente de España por WhatsApp", () => {
+    const [msg] = parseZernioEvents(wa("34642781656") as any);
+    expect(msg.channelUserId).toBe("34642781656");
+  });
+
+  it("el toque de un botón sin texto llega como el título (sin el prefijo btn:)", () => {
+    const [msg] = parseZernioEvents(wa("34642781656", { text: "", metadata: { interactiveId: "btn:Mañana 10:00" } }) as any);
+    expect(msg.text).toBe("Mañana 10:00");
+  });
+});
+
+describe("zernio · sendReply", () => {
+  it("nunca envía a un número de Colombia (ni llama a Zernio)", async () => {
+    const { zernioAdapter } = await import("../../src/channels/zernio");
+    const calls: string[] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (u: string) => {
+      calls.push(String(u));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const env = {
+      ZERNIO_API_KEY: "k",
+      DB: { prepare: () => ({ bind: () => ({ first: async () => ({ conversation_id: "c1", account_id: "a1", platform: "whatsapp" }), run: async () => ({}), all: async () => ({ results: [] }) }) }) },
+    } as any;
+    try {
+      await zernioAdapter.sendReply({ channel: "zernio", channelUserId: "573138804992", chunks: ["hola"] } as any, env);
+      expect(calls).toEqual([]);
+      await zernioAdapter.sendReply({ channel: "zernio", channelUserId: "34642781656", chunks: ["mira:https://x.co/a"] } as any, env);
+      expect(calls.length).toBe(1);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+});
+
+describe("zernio · número de Colombia escrito desde el panel", () => {
+  it("en modo estricto (una persona desde el panel) avisa que NO salió", async () => {
+    const { zernioAdapter } = await import("../../src/channels/zernio");
+    const env = {
+      ZERNIO_API_KEY: "k",
+      DB: { prepare: () => ({ bind: () => ({ first: async () => ({ conversation_id: "c1", account_id: "a1", platform: "whatsapp" }), run: async () => ({}), all: async () => ({ results: [] }) }) }) },
+    } as any;
+    await expect(
+      zernioAdapter.sendReply({ channel: "zernio", channelUserId: "573138804992", chunks: ["hola"] } as any, env, { strict: true }),
+    ).rejects.toThrow(/Colombia/);
+  });
+});

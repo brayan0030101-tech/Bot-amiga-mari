@@ -17,7 +17,7 @@ import { chunkReply } from "./replies/chunker";
 import { pickAdapter } from "./replies/sender";
 import { selectModel } from "./upgrade/modelSelector";
 import type { Tier } from "./upgrade/modelSelector";
-import { dateAnchorBlock } from "./time/dateAnchor";
+import { dateAnchorBlock, botTimezone } from "./time/dateAnchor";
 import { monthIaCostUsd, applyBudgetGuard } from "./budget";
 import { CustomerFactsRepo } from "./db/facts";
 import { createModel } from "./llm/provider";
@@ -590,11 +590,32 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
    * mismo camino ya conocido: silencio hacia el cliente + ticket real para
    * el dueño (notifyOwnerTurnFailed), nunca en un swallow sin rastro.
    */
+  /** true mientras un turno de ESTA conversación está generando su respuesta (en memoria: si el DO se reinicia, vuelve a false). */
+  private turnoEnCurso = false;
+
   async processBuffer(): Promise<void> {
+    // Un solo turno a la vez por conversación (visto en el bot de referencia, 31 oct 2026): si el cliente escribe 2-3 mensajes
+    // seguidos y la alarma dispara mientras el primer turno aún genera, el segundo turno corría EN PARALELO con el historial viejo,
+    // repetía preguntas y contestaba desordenado. Ahora el segundo espera: se vuelve a armar la alarma unos segundos más tarde y,
+    // cuando corre, ya ve la respuesta del primero.
+    if (this.turnoEnCurso) {
+      const at = Date.now() + 3_000;
+      this.sql`
+        INSERT OR REPLACE INTO cf_agents_schedules
+          (id, callback, payload, type, time, created_at)
+        VALUES
+          ('msg-buffer', 'processBuffer', '{}', 'delayed', ${Math.floor(at / 1000)}, unixepoch())
+      `;
+      await this.ctx.storage.setAlarm(at);
+      return;
+    }
+    this.turnoEnCurso = true;
     try {
       await this.processBufferTurn();
     } catch (e) {
       await this.notifyOwnerTurnFailed("el turno falló de forma inesperada", e);
+    } finally {
+      this.turnoEnCurso = false;
     }
   }
 
@@ -604,8 +625,12 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
    * del cliente SIN guardarlo otra vez. Si falla de nuevo, registrarFalloIA decide
    * si hay otro reintento o si ya toca avisar a una persona.
    */
-  async retryFailedTurn(): Promise<void> {
+  async retryFailedTurn(conv?: { id: string; channel: string; channelUserId: string }): Promise<void> {
     try {
+      // Un agente recién creado no tiene estado: sin esto el reintento no encontraba la conversación y no hacía nada.
+      if (conv && !this.state.conversationId) {
+        this.setState({ ...this.state, channel: conv.channel as any, channelUserId: conv.channelUserId, conversationId: conv.id });
+      }
       await this.processBufferTurn(true);
     } catch (e) {
       await this.notifyOwnerTurnFailed("el turno falló de forma inesperada", e);
@@ -878,10 +903,21 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
         instagram: "Instagram",
         messenger: "Facebook Messenger",
         telegram: "Telegram",
+        ycloud: "WhatsApp",
+        kapso: "WhatsApp",
       };
+      // Zernio es un puente de varias plataformas: el nombre real (WhatsApp, Instagram…) es el que Zernio
+      // anotó al recibir. Antes el modelo leía «zernio» y no sabía en qué canal estaba.
+      let canal = CANAL_HUMANO[this.state.channel] ?? this.state.channel;
+      if (this.state.channel === "zernio") {
+        const { getZernioCtx } = await import("./channels/zernio");
+        const plat = ((await getZernioCtx(this.env, this.state.channelUserId))?.platform ?? "").toLowerCase();
+        const PLAT: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", facebook: "Facebook Messenger", messenger: "Facebook Messenger", telegram: "Telegram" };
+        canal = PLAT[plat] ?? (plat || canal);
+      }
       system.push({
         role: "system",
-        content: `<canal>Esta conversación es por ${CANAL_HUMANO[this.state.channel] ?? this.state.channel}.</canal>`,
+        content: `<canal>Esta conversación es por ${canal}.</canal>`,
       });
     }
 
@@ -953,6 +989,10 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
     // inventado — antes se bloqueaban listados válidos por no verlas.
     let turnToolResults: { tool: string; output: string }[] = [];
     let usedModelId = modelId;
+    // ¿Se reservó una videollamada de verdad en este turno? Esa confirmación sale de la
+    // salida de la herramienta (día, hora, enlace): el Blindaje no la puede frenar (en el bot
+    // de referencia la silenció una vez y el cliente se quedó sin confirmación).
+    let reservaEnTurno = false;
 
     // Corre el loop del LLM con un modelo dado; deja los resultados en las vars.
     const attempt = async (m: any, mId: string = modelId) => {
@@ -960,6 +1000,7 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
       // la del dashboard en vez de tumbar cada respuesta (modelAcceptsTemperature).
       const { modelAcceptsTemperature } = await import("./llm/provider");
       const conTemp = cfg.temperature !== undefined && modelAcceptsTemperature(mId);
+      let streamErr: unknown = null;
       const result = streamText({
         model: m,
         system,
@@ -970,11 +1011,17 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
         stopWhen: ({ steps }) => steps.length >= 6,
         ...(effortOptions(this.env, mId) ? { providerOptions: effortOptions(this.env, mId) } : {}),
         ...(conTemp ? { temperature: cfg.temperature } : {}),
+        // streamText NO lanza los errores del proveedor: los deja pasar y el turno termina con
+        // «No output generated» (sin causa). Se guardan para lanzar el error real (ai_fallos lo muestra).
+        onError: ({ error }: { error: unknown }) => {
+          streamErr = error;
+        },
       });
       let text = "";
       for await (const chunk of result.textStream) {
         text += chunk;
       }
+      if (streamErr && !text.trim()) throw streamErr;
       assistantText = text;
       const usage = await result.usage;
       inputTokens = usage?.inputTokens ?? 0;
@@ -998,7 +1045,23 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
       const textosPorPaso = steps
         .map((s: any) => (typeof s?.text === "string" ? s.text.trim() : ""))
         .filter(Boolean);
-      if (textosPorPaso.length > 1) assistantText = textosPorPaso[textosPorPaso.length - 1];
+      if (textosPorPaso.length > 1) {
+        const ultimo = textosPorPaso[textosPorPaso.length - 1];
+        // Si el último paso es solo una confirmación corta de que guardó algo
+        // («Listo, ya quedó guardado.») y un paso anterior traía la pregunta, se
+        // manda esa pregunta: quedarse con la confirmación dejaba al cliente sin
+        // su siguiente pregunta (visto en el bot de referencia con captureLead a mitad del guion).
+        const soloConfirma = !ultimo.includes("?") && ultimo.length <= 80;
+        const conPregunta = [...textosPorPaso.slice(0, -1)].reverse().find((t) => t.includes("?"));
+        assistantText = soloConfirma && conPregunta ? conPregunta : ultimo;
+      }
+      // Videollamada reservada: el cliente siempre recibe confirmación + enlace.
+      const confirmacion = await import("./lib/confirmacionLlamada");
+      reservaEnTurno = confirmacion.huboReserva(steps as any[]);
+      assistantText = confirmacion.aseguraConfirmacionLlamada(assistantText, steps as any[], {
+        tz: botTimezone(this.env),
+        asesora: this.env.BOT_NAME,
+      });
       toolCallCount = steps.reduce((n, s) => n + (s.toolCalls?.length ?? 0), 0);
       // Persist what the agent DID (not just what it said): tool name + input,
       // feeding the dashboard's thread chips, stats and the Mi Agente counters.
@@ -1170,7 +1233,7 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
     // Sin respaldo → sale un "déjame confirmarlo" y se avisa al dueño (ticket,
     // misma maquinaria del handoff). FAIL-OPEN: cualquier error/timeout del
     // verificador manda la respuesta original intacta — jamás bloquea un envío.
-    if (assistantText && cfg.blindajeEnabled) {
+    if (assistantText && cfg.blindajeEnabled && !reservaEnTurno) {
       try {
         const { guardReply } = await import("./blindaje/verify");
         const guard = await guardReply(this.env, {
@@ -1236,7 +1299,7 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
     }
 
     // Persist assistant message (with usage + model_used + tool calls)
-    await msgs.append(convId, "assistant", assistantText, {
+    const assistantMsgId = await msgs.append(convId, "assistant", assistantText, {
       modelUsed: usedModelId,
       inputTokens,
       outputTokens,
@@ -1278,14 +1341,25 @@ export class SupportAgent extends Agent<Env, SupportAgentState> {
     const channel = this.state.channel as ChannelId;
     const adapter = pickAdapter(channel);
     const { sendChunkedReply } = await import("./replies/sender");
-    await sendChunkedReply(
-      adapter,
-      channel,
-      this.state.channelUserId,
-      chunks,
-      this.env,
-      cfg.interChunkDelayMs,
-    );
+    // Envío con 3 intentos (2 s y 5 s de espera): un fallo pasajero del proveedor ya no deja al cliente sin respuesta (en el bot de
+    // referencia un envío falló y el cliente esperó 38 min). Si aun así falla, se BORRA la respuesta guardada: así el turno vuelve a
+    // verse como «sin respuesta» y se puede recuperar; antes quedaba guardada como si se hubiera enviado.
+    let envioError: unknown = null;
+    for (let intento = 0; intento < 3; intento++) {
+      if (intento > 0) await new Promise((r) => setTimeout(r, intento === 1 ? 2_000 : 5_000));
+      try {
+        await sendChunkedReply(adapter, channel, this.state.channelUserId, chunks, this.env, cfg.interChunkDelayMs);
+        envioError = null;
+        break;
+      } catch (e) {
+        envioError = e;
+        console.error(`[SupportAgent.processBuffer] envío falló (intento ${intento + 1}/3):`, e);
+      }
+    }
+    if (envioError) {
+      await db.run("DELETE FROM messages WHERE id = ?", [assistantMsgId]).catch(() => undefined);
+      throw envioError;
+    }
 
     console.log(
       `[SupportAgent.processBuffer] sent ${chunks.length} chunks, model=${usedModelId}, cost=$${costOfUsage(

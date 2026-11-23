@@ -22,6 +22,8 @@ import type { Env } from "../env";
 import { Db } from "../db/client";
 import { ConversationsRepo } from "../db/conversations";
 import { resolveTakeoverMs } from "../db/settings";
+import { esNumeroColombiano } from "../lib/colombia";
+import { separarEnlaces } from "../lib/enlaces";
 
 const YCLOUD_BASE = "https://api.ycloud.com/v2";
 const MEDIA_TTL_MS = 10 * 60 * 1000; // la URL firmada del proxy vive 10 min
@@ -227,6 +229,10 @@ export async function parseYCloudEvents(
   }
   const from = normPhone(m.from);
   if (!from) return [];
+  if (esNumeroColombiano(from)) {
+    console.log("ycloud: mensaje de número colombiano ignorado (regla fija)");
+    return [];
+  }
 
   let text: string | undefined;
   let audioUrl: string | undefined;
@@ -335,6 +341,12 @@ export const ycloudAdapter: ChannelAdapter = {
   },
 
   async sendReply(reply: OutgoingReply, env: Env, opts?: SendOptions): Promise<void> {
+    if (esNumeroColombiano(reply.channelUserId)) {
+      // Regla fija: nunca a números colombianos. Si lo escribió una persona desde el panel, que vea que NO salió.
+      if (opts?.strict) throw new Error("ycloud: envío a número colombiano bloqueado (regla fija)");
+      return;
+    }
+    reply = { ...reply, chunks: reply.chunks.map(separarEnlaces) };
     const from = env.YCLOUD_WA_FROM;
     const apiKey = env.YCLOUD_API_KEY;
     if (!from || !apiKey) {
@@ -390,6 +402,7 @@ export async function sendYCloudTemplate(
   lang: string,
   bodyParams: string[] = [],
 ): Promise<void> {
+  if (esNumeroColombiano(to)) return; // regla fija: nunca a números colombianos
   const from = env.YCLOUD_WA_FROM;
   const apiKey = env.YCLOUD_API_KEY;
   if (!from || !apiKey) {

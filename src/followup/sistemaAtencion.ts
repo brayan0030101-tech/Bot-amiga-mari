@@ -33,6 +33,7 @@ import { selfOrigin } from "../lib/self-origin";
 import { equipoConfigured, notifyEquipo, leadFicha } from "../lib/equipo";
 import { messageOwner } from "../tools/handoffHuman";
 import { sendOutbound } from "./send";
+import { puedeEscribirAhora } from "../lib/horarioCliente";
 import { sendYCloudTemplate } from "../channels/ycloud";
 
 const H = 3600_000;
@@ -180,6 +181,7 @@ export async function runGuionSeguimiento(env: Env, now = Date.now()): Promise<{
     if (c.last_role !== "assistant" || c.last_user_at == null) continue;
     const idle = now - c.last_user_at;
     if (idle < 20 * H || idle > 23.5 * H) continue;
+    if (!(await puedeEscribirAhora(db, c, now))) continue; // madrugada del cliente: se reintenta en la próxima pasada
     if (!(await claim(db, "conversations", c.id, "bot_guion24", now))) continue;
 
     const nombre = primerNombre(c.display_name);
@@ -252,6 +254,7 @@ export async function runSeguimientoProyectos(env: Env, now = Date.now()): Promi
     const desde = now - c.projects_at;
     if (desde < 48 * H || desde > 7 * 24 * H) continue;
     if (c.last_user_at != null && c.last_user_at > c.projects_at) continue; // ya respondió
+    if (!(await puedeEscribirAhora(db, c, now))) continue; // madrugada del cliente
     if (!(await claim(db, "conversations", c.id, "bot_proy48", now))) continue;
 
     const nombre = primerNombre(c.display_name);
@@ -296,6 +299,14 @@ export async function runRecordatoriosLlamada(
   env: Env,
   now = Date.now(),
 ): Promise<{ r24: number; r1: number; resumenes: number }> {
+  // Antes de avisar: las citas canceladas en Cal.com no reciben recordatorio y las reprogramadas
+  // lo reciben en la fecha nueva. Cualquier error de Cal.com = no se toca nada y se sigue como siempre.
+  try {
+    const { sincronizarCitas } = await import("./sincronizarCitas");
+    await sincronizarCitas(env, now);
+  } catch (e) {
+    console.error("[sistemaAtencion] sincronizarCitas:", e);
+  }
   const db = new Db(env.DB);
   const tz = botTimezone(env);
   const rows = await db.all<CitaRow>(
@@ -353,7 +364,8 @@ export async function runRecordatoriosLlamada(
     const ref: ConvRef = { id: conv.id, channel: conv.channel, channel_user_id: conv.channel_user_id, display_name: conv.display_name };
 
     // Recordatorio 24 h: solo si la cita se agendó con ≥ 24 h de antelación.
-    if (falta <= 24 * H && falta > 2 * H && lead.created_at <= inicio - 24 * H && (await claim(db, "leads", lead.id, "bot_r24", now))) {
+    // (El de 24 h respeta la madrugada del cliente; el de 1 h no se frena.)
+    if (falta <= 24 * H && falta > 2 * H && lead.created_at <= inicio - 24 * H && (await puedeEscribirAhora(db, ref, now)) && (await claim(db, "leads", lead.id, "bot_r24", now))) {
       const text =
         `¡Hola${nombre ? ` ${nombre}` : ""}! 😊 Te recuerdo que mañana tienes tu videollamada con nuestra asesora a las ${hora} (${etiquetaHora(tz)}). ` +
         `¿Sigue en pie, o prefieres reprogramarla?`;
@@ -562,6 +574,7 @@ export async function runPedirDatos(env: Env, now = Date.now()): Promise<{ sent:
     } catch { /* metadata rota */ }
     if (yaPidioTel) falta = falta.filter((f) => f !== "teléfono");
     if (falta.length === 0) continue;
+    if (!(await puedeEscribirAhora(db, conv, now))) continue; // madrugada del cliente
     if (!(await claim(db, "conversations", conv.id, "bot_pidedatos", now))) continue;
     try {
       await enviarACliente(env, db, conv, textoPedirDatos(primerNombre(lead.nombre, conv.display_name), falta), null, u.user, now);

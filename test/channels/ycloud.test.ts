@@ -197,10 +197,10 @@ describe("normalizeYCloudEvents", () => {
 
 describe("filtro por número (cuenta de YCloud compartida con otro bot)", () => {
   const NUMERO_BOT = "+34600000000";
-  const OTRO = "+34603039032";
+  const OTRO = "+34600000099";
   const envNum = { ...env, YCLOUD_WA_FROM: NUMERO_BOT } as any;
   const msg = (to: string) =>
-    inbound({ id: "id9", wamid: "wamid.9", from: "+57 300 123 4567", to, type: "text", text: { body: "hola" } }) as any;
+    inbound({ id: "id9", wamid: "wamid.9", from: "+34 611 223 344", to, type: "text", text: { body: "hola" } }) as any;
   const eco = (from: string) =>
     ({
       id: "evt_e9",

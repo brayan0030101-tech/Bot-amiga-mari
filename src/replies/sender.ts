@@ -1,3 +1,4 @@
+import { botonesApagados } from "../lib/botones";
 import type { ChannelAdapter, ChannelId, ReplyButton, ReplyMedia } from "../channels/shared";
 import { BUTTON_CHANNELS, MEDIA_CHANNELS } from "../channels/shared";
 import type { Env } from "../env";
@@ -295,7 +296,9 @@ export async function sendChunkedReply(
       }
     }
   }
-  let buttons = ext.buttons;
+  // Con `bot_botones = apagado` el marcador se descarta SIN convertirlo en lista numerada: la pregunta sale como texto natural.
+  const sinBotones = ext.buttons ? await botonesApagados(env) : false;
+  let buttons = sinBotones ? undefined : ext.buttons;
   if (buttons) {
     if (!BUTTON_CHANNELS.has(channel)) {
       const lista = botonesATexto(buttons);

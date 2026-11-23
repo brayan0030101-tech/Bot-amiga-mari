@@ -19,6 +19,8 @@ import type { ChannelAdapter, IncomingMessage, OutgoingReply, SendOptions } from
 import { reportSendFailure } from "./shared";
 import type { Env } from "../env";
 import { Db } from "../db/client";
+import { separarEnlaces } from "../lib/enlaces";
+import { esColombianoEnZernio } from "../lib/colombia";
 
 const DEFAULT_BASE = "https://zernio.com/api/v1";
 function zernioBase(env: Env): string {
@@ -144,6 +146,11 @@ export function parseZernioEvents(ev: ZernioEvent): IncomingMessage[] {
   if (!m || m.direction === "outgoing") return [];
   const channelUserId = m.sender?.id?.trim();
   if (!channelUserId) return [];
+  // Regla fija: lo que llega de números de Colombia por WhatsApp se ignora (el bot nunca les responde).
+  if (esColombianoEnZernio(channelUserId, m.platform)) {
+    console.log("[zernio] mensaje de número colombiano ignorado (regla fija)");
+    return [];
+  }
   const { imageUrl, audioUrl, fileUrl, fileName, fileMime } = pickMedia(m.attachments);
   return [
     {
@@ -152,7 +159,11 @@ export function parseZernioEvents(ev: ZernioEvent): IncomingMessage[] {
       displayName: m.sender?.username || m.sender?.name || undefined,
       // Tap de botón sin texto (algunas plataformas mandan solo el payload):
       // se usa el payload/callback como texto para que el cerebro lo entienda.
-      text: m.text || m.metadata?.interactiveId || m.metadata?.callbackData || undefined,
+      text:
+        m.text ||
+        // El payload de nuestros botones es "btn:<título>": el cliente "dijo" el título.
+        (m.metadata?.interactiveId || m.metadata?.callbackData || "").replace(/^btn:/, "") ||
+        undefined,
       imageUrl,
       audioUrl,
       fileUrl,
@@ -248,6 +259,11 @@ export async function sendZernioTemplate(
   // llama (reengage, el inbox móvil) necesita distinguir "se mandó" de "rebotó".
   // Tragarse el error persistía un mensaje que el cliente nunca recibió.
   if (!apiKey) throw new Error("Zernio: falta ZERNIO_API_KEY.");
+  // Regla fija: nunca una plantilla a un número de Colombia (se busca de quién es la conversación).
+  if (await conversacionColombiana(env, conversationId)) {
+    console.log("[zernio] plantilla a número colombiano bloqueada (regla fija)");
+    return;
+  }
   const element: Record<string, unknown> = { name: templateName, language: templateLanguage };
   if (templateParams.length) {
     element.components = [
@@ -263,6 +279,47 @@ export async function sendZernioTemplate(
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
     throw new Error(`zernio template ${res.status}: ${errBody.slice(0, 300)}`);
+  }
+}
+
+/** ¿La conversación de Zernio es de un número de Colombia por WhatsApp? (para bloquear plantillas). */
+async function conversacionColombiana(env: Env, conversationId: string): Promise<boolean> {
+  try {
+    const db = new Db(env.DB);
+    await ensureCtx(db);
+    const row = await db.first<{ channel_user_id: string; platform: string | null }>(
+      "SELECT channel_user_id, platform FROM zernio_ctx WHERE conversation_id = ?",
+      [conversationId],
+    );
+    return !!row && esColombianoEnZernio(row.channel_user_id, row.platform);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Deja constancia (tabla `envios_fallidos`) de un mensaje que Zernio rechazó y avisa al equipo, máx. una vez
+ * cada 30 min. Antes un rechazo de Zernio solo quedaba en el log del Worker y nadie se enteraba de que el
+ * cliente no recibió la respuesta.
+ */
+async function registrarFalloZernio(env: Env, destino: string, detalle: string): Promise<void> {
+  try {
+    const db = new Db(env.DB);
+    await db.run("CREATE TABLE IF NOT EXISTS envios_fallidos (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, canal TEXT NOT NULL, destino TEXT NOT NULL, detalle TEXT NOT NULL)");
+    await db.run("INSERT INTO envios_fallidos (ts, canal, destino, detalle) VALUES (?,?,?,?)", [Date.now(), "zernio", destino, detalle.slice(0, 500)]);
+    const { SettingsRepo } = await import("../db/settings");
+    const settings = new SettingsRepo(db);
+    const ultimo = Number((await settings.get("zernio_alerta_envio")) ?? 0) || 0;
+    if (Date.now() - ultimo < 30 * 60_000) return;
+    await settings.set("zernio_alerta_envio", String(Date.now()));
+    const { notifyEquipo } = await import("../lib/equipo");
+    await notifyEquipo(env, {
+      heading: "⚠️ Un mensaje del bot no salió",
+      body: `Zernio rechazó un mensaje del bot (${detalle}). Puede ser la ventana de 24 h de WhatsApp o un fallo de la conexión. Revisa la conversación en el panel.`,
+      url: `${env.DASHBOARD_BASE_URL || ""}/admin`,
+    }).catch(() => false);
+  } catch {
+    /* el registro nunca debe tumbar el envío */
   }
 }
 
@@ -289,6 +346,14 @@ export const zernioAdapter: ChannelAdapter = {
       return;
     }
     const ctx = await getZernioCtx(env, reply.channelUserId);
+    // Regla fija: nunca se le escribe a un número de Colombia por WhatsApp.
+    if (esColombianoEnZernio(reply.channelUserId, ctx?.platform)) {
+      const err = "[zernio] envío a número colombiano bloqueado (regla fija: el bot nunca escribe a números de Colombia)";
+      console.log(err);
+      if (opts?.strict) throw new Error(err); // escrito por una persona desde el panel: que vea que NO salió
+      return;
+    }
+    reply = { ...reply, chunks: reply.chunks.map(separarEnlaces) };
     if (!ctx) {
       const err = `[zernio] sin contexto de envío para ${reply.channelUserId} — no se responde`;
       console.error(err);
@@ -327,7 +392,10 @@ export const zernioAdapter: ChannelAdapter = {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify(body),
       });
-      if (!res.ok) await reportSendFailure("[zernio] sendReply", res, opts);
+      if (!res.ok) {
+        await registrarFalloZernio(env, reply.channelUserId, `${res.status} ${(await res.clone().text().catch(() => "")).slice(0, 160)}`);
+        await reportSendFailure("[zernio] sendReply", res, opts);
+      }
     }
     // Galería: cada archivo va como mensaje propio DESPUÉS del texto —
     // attachmentUrl + attachmentType (spec de Zernio). voiceNote=true manda el

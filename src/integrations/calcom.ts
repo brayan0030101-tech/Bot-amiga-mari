@@ -1,4 +1,6 @@
 import type { Env } from "../env";
+import { Db } from "../db/client";
+import { SettingsRepo } from "../db/settings";
 
 // Cliente de Cal.com API v2 para los nichos de cita. Dos capacidades:
 //  - getAvailableSlots: horarios reales libres de un event type en un día.
@@ -64,6 +66,21 @@ interface Slot {
  * Horarios libres de un event type para una fecha (YYYY-MM-DD, en la zona dada).
  * Devuelve los ISO `start` de los slots disponibles ese día.
  */
+/**
+ * Días en los que NO se ofrece ni se reserva ninguna cita nueva (ajuste `agenda_dias_bloqueados`, fechas
+ * YYYY-MM-DD separadas por coma, en la zona de la agenda). Las citas que ya existían no se tocan.
+ * Si no hay base de datos o el ajuste está vacío, no se bloquea nada.
+ */
+export async function diasBloqueados(env: Env): Promise<Set<string>> {
+  try {
+    if (!env.DB) return new Set();
+    const raw = await new SettingsRepo(new Db(env.DB)).get("agenda_dias_bloqueados");
+    return new Set((raw ?? "").split(/[,;\s]+/).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)));
+  } catch {
+    return new Set();
+  }
+}
+
 export async function getAvailableSlots(
   env: Env,
   eventTypeId: number,
@@ -71,6 +88,7 @@ export async function getAvailableSlots(
   timeZone: string,
 ): Promise<{ ok: true; slots: string[] } | { ok: false; reason: string }> {
   if (!env.CALCOM_API_KEY) return { ok: false, reason: "not_configured" };
+  if ((await diasBloqueados(env)).has(date)) return { ok: true, slots: [] };
   // Ventana [date, date+1día) para traer solo ese día.
   const end = nextDay(date);
   const url = `${CALCOM_API}/slots?eventTypeId=${eventTypeId}&start=${date}&end=${end}&timeZone=${encodeURIComponent(timeZone)}`;
@@ -121,6 +139,7 @@ export async function getAvailableSlotsRange(
     for (const [date, list] of Object.entries(body.data ?? {})) {
       byDate[date] = (list ?? []).map((s) => s?.start).filter((s): s is string => typeof s === "string");
     }
+    for (const d of await diasBloqueados(env)) delete byDate[d];
     return { ok: true, byDate };
   } catch (e: any) {
     return { ok: false, reason: `transient:${String(e?.message ?? e)}` };
@@ -167,10 +186,14 @@ export async function createBooking(
     notes?: string;
   },
 ): Promise<
-  | { ok: true; bookingId: number | string; uid?: string; status?: string; start?: string }
+  | { ok: true; bookingId: number | string; uid?: string; status?: string; start?: string; meetingUrl?: string }
   | { ok: false; reason: string }
 > {
   if (!env.CALCOM_API_KEY) return { ok: false, reason: "not_configured" };
+  if ((await diasBloqueados(env)).has(args.start.slice(0, 10))) {
+    console.warn(`[calcom] booking bloqueado: ${args.start.slice(0, 10)} está en agenda_dias_bloqueados`);
+    return { ok: false, reason: "dia_bloqueado" };
+  }
   try {
     const res = await fetch(`${CALCOM_API}/bookings`, {
       method: "POST",
@@ -195,10 +218,17 @@ export async function createBooking(
       console.error(`[calcom] booking http_${res.status} · eventType=${args.eventTypeId} start=${args.start} · ${(await res.text().catch(() => "")).slice(0, 300)}`);
       return { ok: false, reason: `http_${res.status}` };
     }
-    const body = (await res.json()) as { data?: { id: number | string; uid?: string; status?: string; start?: string } };
+    const body = (await res.json()) as {
+      data?: { id: number | string; uid?: string; status?: string; start?: string; meetingUrl?: string; location?: string };
+    };
     const d = body.data;
     if (!d?.id) return { ok: false, reason: "no_booking_id" };
-    return { ok: true, bookingId: d.id, uid: d.uid, status: d.status, start: d.start };
+    // Enlace para entrar a la llamada: el que devuelve Cal.com (Google Meet o
+    // Cal Video). Solo si la reserva es de Cal Video se arma con el uid; con
+    // otra ubicación, un enlace armado sería falso.
+    const esUrl = (v?: string) => (typeof v === "string" && /^https?:\/\//.test(v) ? v : undefined);
+    const meetingUrl = esUrl(d.meetingUrl) ?? esUrl(d.location) ?? (d.uid && /cal-?video/i.test(d.location ?? "") ? `https://app.cal.com/video/${d.uid}` : undefined);
+    return { ok: true, bookingId: d.id, uid: d.uid, status: d.status, start: d.start, meetingUrl };
   } catch (e: any) {
     return { ok: false, reason: `transient:${String(e?.message ?? e)}` };
   }
@@ -209,6 +239,79 @@ export async function createBooking(
  * eso createBooking lo devuelve y agendarCita lo persiste en el lead
  * (metadata.calBookingUid): sin uid, una cita creada hoy no se puede cancelar mañana.
  */
+/**
+ * Estado real de una reserva en Cal.com. «cancelada» = cancelada, rechazada o ya no existe (404): no se debe avisar al cliente de esa cita.
+ * Ante cualquier duda (sin clave, error de red, respuesta rara) devuelve «desconocida» y el recordatorio sale como siempre.
+ */
+export async function estadoReserva(env: Env, uid: string): Promise<"activa" | "cancelada" | "desconocida"> {
+  if (!env.CALCOM_API_KEY || !uid) return "desconocida";
+  try {
+    const res = await fetch(`${CALCOM_API}/bookings/${encodeURIComponent(uid)}`, {
+      headers: { Authorization: `Bearer ${env.CALCOM_API_KEY}`, "cal-api-version": BOOKINGS_VERSION },
+    });
+    if (res.status === 404) return "cancelada";
+    if (!res.ok) return "desconocida";
+    const body = (await res.json()) as { data?: { status?: string } };
+    const st = String(body.data?.status ?? "").toLowerCase();
+    if (st === "cancelled" || st === "canceled" || st === "rejected") return "cancelada";
+    return st ? "activa" : "desconocida";
+  } catch {
+    return "desconocida";
+  }
+}
+
+export interface ReservaCal {
+  uid: string;
+  /** accepted, cancelled, rejected, pending… (en minúsculas). */
+  status: string;
+  /** Inicio ISO (UTC). */
+  start: string;
+  meetingUrl?: string;
+  /** Si es el resultado de reprogramar otra reserva: la anterior. */
+  rescheduledFromUid?: string;
+  /** Si esta reserva se reprogramó: la nueva. */
+  rescheduledToUid?: string;
+  /** Correos de los asistentes (en minúsculas; solo para emparejar, nunca se muestran). */
+  emails: string[];
+}
+
+const aReserva = (b: Record<string, unknown>): ReservaCal => ({
+  uid: String(b["uid"] ?? ""),
+  status: String(b["status"] ?? "").toLowerCase(),
+  start: String(b["start"] ?? ""),
+  meetingUrl: typeof b["meetingUrl"] === "string" ? (b["meetingUrl"] as string) : undefined,
+  rescheduledFromUid: typeof b["rescheduledFromUid"] === "string" ? (b["rescheduledFromUid"] as string) : undefined,
+  rescheduledToUid: typeof b["rescheduledToUid"] === "string" ? (b["rescheduledToUid"] as string) : undefined,
+  emails: (Array.isArray(b["attendees"]) ? (b["attendees"] as Array<Record<string, unknown>>) : []).map((a) => String(a?.["email"] ?? "").toLowerCase()).filter(Boolean),
+});
+
+/** Datos de UNA reserva de Cal.com (para saber si se canceló o se reprogramó). `claves` = nombres de campos que trae (diagnóstico). */
+export async function detalleReserva(env: Env, uid: string): Promise<{ ok: true; reserva: ReservaCal; claves: string[] } | { ok: false; reason: string }> {
+  if (!env.CALCOM_API_KEY || !uid) return { ok: false, reason: "not_configured" };
+  try {
+    const res = await fetch(`${CALCOM_API}/bookings/${encodeURIComponent(uid)}`, { headers: { Authorization: `Bearer ${env.CALCOM_API_KEY}`, "cal-api-version": BOOKINGS_VERSION } });
+    if (res.status === 404) return { ok: false, reason: "not_found" };
+    if (!res.ok) return { ok: false, reason: `http_${res.status}` };
+    const b = ((await res.json()) as { data?: Record<string, unknown> }).data ?? {};
+    return { ok: true, reserva: aReserva(b), claves: Object.keys(b) };
+  } catch (e: any) {
+    return { ok: false, reason: `transient:${String(e?.message ?? e)}` };
+  }
+}
+
+/** Reservas próximas (vigentes) de Cal.com. */
+export async function reservasProximas(env: Env, take = 100): Promise<{ ok: true; reservas: ReservaCal[] } | { ok: false; reason: string }> {
+  if (!env.CALCOM_API_KEY) return { ok: false, reason: "not_configured" };
+  try {
+    const res = await fetch(`${CALCOM_API}/bookings?status=upcoming&take=${take}`, { headers: { Authorization: `Bearer ${env.CALCOM_API_KEY}`, "cal-api-version": BOOKINGS_VERSION } });
+    if (!res.ok) return { ok: false, reason: `http_${res.status}` };
+    const lista = ((await res.json()) as { data?: Record<string, unknown>[] }).data ?? [];
+    return { ok: true, reservas: lista.map(aReserva) };
+  } catch (e: any) {
+    return { ok: false, reason: `transient:${String(e?.message ?? e)}` };
+  }
+}
+
 export async function cancelBooking(
   env: Env,
   uid: string,
