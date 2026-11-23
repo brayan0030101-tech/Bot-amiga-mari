@@ -596,6 +596,9 @@ export async function runSistemaAtencion(env: Env, now = Date.now()): Promise<vo
   const { resolveAgentConfig } = await import("../settings-loader");
   const cfg = await resolveAgentConfig(env, []);
   if (!cfg.botPaused) await runAlCliente(env, now);
+  // Guardián de las reglas del bot: solo guarda copias y avisa al equipo; nunca escribe a clientes, así que corre también en pausa.
+  const { runGuardianInstrucciones } = await import("./guardianInstrucciones");
+  await runGuardianInstrucciones(env, now).catch((e) => console.error("[sistemaAtencion] guardián de instrucciones:", e));
   const { runResumenDia, runExcelListos } = await import("./resumenDia");
   await runResumenDia(env, now).catch((e) => console.error("[sistemaAtencion] resumen:", e));
   await runExcelListos(env, now).catch((e) => console.error("[sistemaAtencion] excel:", e));
