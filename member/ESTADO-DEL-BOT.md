@@ -64,10 +64,11 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Ajustes nuevos (D1, todos opcionales): `agenda_dias_bloqueados`, `bot_botones`.
 
 ## Paso 2 (23 nov) — reglas del bot: borrador listo, NO guardado
-- Texto: `member/reglas-del-bot.borrador.txt`. Las reglas del bot viven en D1 (`settings.custom_instructions`); hoy esa clave está VACÍA en la base de Verónica y no se ha tocado.
+- Texto: `member/reglas-del-bot.txt`. Las reglas del bot viven en D1 (`settings.custom_instructions`); hoy esa clave está VACÍA en la base de Verónica y no se ha tocado.
 - Antes de guardarlas: aprobación de Brayan y correr las 14 conversaciones de prueba con la IA real (`src/followup/pruebasBot.ts`).
 - Código nuevo (sin desplegar): guardián de las reglas, conversaciones de prueba y campos nuevos de la ficha.
 - 25 nov: Brayan decidió sobre el borrador (habla Verónica, sin emojis, Datacrédito se pregunta, cotización solo si la pide, solo colombianos en el exterior). El borrador está actualizado y sigue SIN guardar. Detalle en `HISTORIAL-DEL-PROYECTO.md`.
 - Ojo para cuando se active el bot: la cotización que pida un cliente la prepara y envía una persona (no hay cotizador automático) y los clientes reportados que no pueden ponerse al día no reciben videollamada.
 - 25 nov: las 20 conversaciones de prueba dieron 20 de 20 contra la IA real (con las limitaciones anotadas en el historial). El borrador sigue SIN guardar en la base; falta el visto bueno de Brayan para guardarlo.
+- 25 nov: **las reglas del bot ya están guardadas** en la base (`settings.custom_instructions`; copia en `member/reglas-del-bot.txt`). El bot sigue en pausa general y lo desplegado sigue siendo el código del 15 oct. Antes de reactivarlo: desplegar los pasos 1 y 2 (con permiso de Brayan) y probar con un caso real.
 

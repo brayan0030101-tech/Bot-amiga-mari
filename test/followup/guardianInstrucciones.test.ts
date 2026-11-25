@@ -62,23 +62,23 @@ describe("guardián de instrucciones", () => {
   });
 });
 
-describe("el borrador de reglas de Verónica", () => {
+describe("las reglas de Verónica", () => {
   it("contiene TODAS las reglas imprescindibles del guardián", async () => {
     const { readFileSync } = await import("node:fs");
-    const texto = readFileSync("member/reglas-del-bot.borrador.txt", "utf8");
+    const texto = readFileSync("member/reglas-del-bot.txt", "utf8");
     const { marcadoresQueFaltan } = await import("../../src/followup/guardianInstrucciones");
     expect(marcadoresQueFaltan(texto)).toEqual([]);
   });
 
   it("no menciona a otra asesora, otro negocio ni sus herramientas", async () => {
     const { readFileSync } = await import("node:fs");
-    const texto = readFileSync("member/reglas-del-bot.borrador.txt", "utf8");
+    const texto = readFileSync("member/reglas-del-bot.txt", "utf8");
     expect(texto).not.toMatch(PROHIBIDAS_BORRADOR);
   });
 
   it("solo nombra herramientas que existen o que se conectarán en el plan", async () => {
     const { readFileSync } = await import("node:fs");
-    const texto = readFileSync("member/reglas-del-bot.borrador.txt", "utf8");
+    const texto = readFileSync("member/reglas-del-bot.txt", "utf8");
     const permitidas = new Set(["captureLead", "handoffHuman", "pauseBot", "verDisponibilidad", "agendarCita", "cancelarCita", "calificarComprador", "registrarVisita", "scheduleAppointment"]);
     const citadas = new Set(texto.match(/\b(?:captureLead|handoffHuman|pauseBot|verDisponibilidad|agendarCita|cancelarCita|calificarComprador|registrarVisita|scheduleAppointment|proponerLlamada|enlaceWhatsApp|enviarViabilidad|proyectosEconomicos|searchKb|marcadorDias|marcadorHoras)\b/g) ?? []);
     for (const t of citadas) expect(permitidas.has(t), `la herramienta ${t} no existe todavía`).toBe(true);
@@ -86,14 +86,14 @@ describe("el borrador de reglas de Verónica", () => {
 
   it("mantiene la honestidad sobre ser asistente virtual y no pide botones", async () => {
     const { readFileSync } = await import("node:fs");
-    const texto = readFileSync("member/reglas-del-bot.borrador.txt", "utf8");
+    const texto = readFileSync("member/reglas-del-bot.txt", "utf8");
     expect(texto).toContain("NUNCA niegues ser un asistente virtual");
     expect(texto).not.toMatch(/\[\[botones/);
   });
 
   it("sigue las decisiones del dueño: habla Verónica en primera persona, sin emojis, Datacrédito se pregunta y la cotización solo si la pide", async () => {
     const { readFileSync } = await import("node:fs");
-    const texto = readFileSync("member/reglas-del-bot.borrador.txt", "utf8");
+    const texto = readFileSync("member/reglas-del-bot.txt", "utf8");
     expect(texto).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(texto).toContain("Soy Verónica, de Bekai Colombia");
     expect(texto).not.toContain("equipo comercial de Verónica Rivera");
