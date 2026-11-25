@@ -100,16 +100,16 @@ describe("zernio · regla de Colombia y botones", () => {
   });
 
   it("ignora lo que llega de un número de Colombia por WhatsApp", () => {
-    expect(parseZernioEvents(wa("573138804992") as any)).toEqual([]);
+    expect(parseZernioEvents(wa("573001234567") as any)).toEqual([]);
   });
 
   it("sí procesa a un cliente de España por WhatsApp", () => {
-    const [msg] = parseZernioEvents(wa("34642781656") as any);
-    expect(msg.channelUserId).toBe("34642781656");
+    const [msg] = parseZernioEvents(wa("34600000011") as any);
+    expect(msg.channelUserId).toBe("34600000011");
   });
 
   it("el toque de un botón sin texto llega como el título (sin el prefijo btn:)", () => {
-    const [msg] = parseZernioEvents(wa("34642781656", { text: "", metadata: { interactiveId: "btn:Mañana 10:00" } }) as any);
+    const [msg] = parseZernioEvents(wa("34600000011", { text: "", metadata: { interactiveId: "btn:Mañana 10:00" } }) as any);
     expect(msg.text).toBe("Mañana 10:00");
   });
 });
@@ -128,9 +128,9 @@ describe("zernio · sendReply", () => {
       DB: { prepare: () => ({ bind: () => ({ first: async () => ({ conversation_id: "c1", account_id: "a1", platform: "whatsapp" }), run: async () => ({}), all: async () => ({ results: [] }) }) }) },
     } as any;
     try {
-      await zernioAdapter.sendReply({ channel: "zernio", channelUserId: "573138804992", chunks: ["hola"] } as any, env);
+      await zernioAdapter.sendReply({ channel: "zernio", channelUserId: "573001234567", chunks: ["hola"] } as any, env);
       expect(calls).toEqual([]);
-      await zernioAdapter.sendReply({ channel: "zernio", channelUserId: "34642781656", chunks: ["mira:https://x.co/a"] } as any, env);
+      await zernioAdapter.sendReply({ channel: "zernio", channelUserId: "34600000011", chunks: ["mira:https://x.co/a"] } as any, env);
       expect(calls.length).toBe(1);
     } finally {
       globalThis.fetch = orig;
@@ -146,7 +146,7 @@ describe("zernio · número de Colombia escrito desde el panel", () => {
       DB: { prepare: () => ({ bind: () => ({ first: async () => ({ conversation_id: "c1", account_id: "a1", platform: "whatsapp" }), run: async () => ({}), all: async () => ({ results: [] }) }) }) },
     } as any;
     await expect(
-      zernioAdapter.sendReply({ channel: "zernio", channelUserId: "573138804992", chunks: ["hola"] } as any, env, { strict: true }),
+      zernioAdapter.sendReply({ channel: "zernio", channelUserId: "573001234567", chunks: ["hola"] } as any, env, { strict: true }),
     ).rejects.toThrow(/Colombia/);
   });
 });

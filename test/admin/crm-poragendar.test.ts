@@ -1,0 +1,107 @@
+/**
+ * CRM de Verónica: «Por agendar» — une IG y WhatsApp por teléfono y detecta quién propuso horario.
+ */
+import { describe, it, expect, beforeEach } from "vitest";
+import { createTestMiniflare } from "../helpers/miniflareSetup";
+import { Db } from "../../src/db/client";
+import { cargarPorAgendar, clavePhone, proponeHorario, renderCrmPorAgendar, excelPorAgendar, descartarPersona, reactivarPersona } from "../../member/crm-poragendar.local";
+import type { Env } from "../../src/env";
+
+let env: Env;
+let db: Db;
+const NOW = Date.UTC(2026, 10, 12, 12, 0);
+const H = 3600_000;
+const META = { ciudadCompra: "Medellín", ahorroDisponible: "20 mil euros", cuotaMensual: "800", ingresosMensuales: "3000", tipoEmpleo: "empleado" };
+
+async function ig(id: string, nombre: string, contacto: string, ultimoH = 60) {
+  await db.run("INSERT INTO conversations (id, channel, channel_user_id, display_name, started_at, last_message_at) VALUES (?,?,?,?,?,?)", [id, "zernio", id.slice(-8), nombre.toLowerCase(), NOW - 300 * H, NOW - ultimoH * H]);
+  await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, metadata, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)", [`l-${id}`, id, nombre, contacto, "compra", JSON.stringify(META), "new", NOW - 300 * H, NOW - 100 * H]);
+}
+async function wa(tel: string, mensajes: Array<[string, number]> = []) {
+  const id = `ycloud:${tel}`;
+  await db.run("INSERT INTO conversations (id, channel, channel_user_id, display_name, started_at, last_message_at) VALUES (?,?,?,?,?,?)", [id, "ycloud", tel, null, NOW - 100 * H, NOW - 50 * H]);
+  for (const [t, hace] of mensajes) await db.run("INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?,?,?,?,?)", [crypto.randomUUID(), id, "user", t, NOW - hace * H]);
+}
+const motivoDe = async (nombre: string, frios = false) => (await cargarPorAgendar(env, { frios }, NOW)).find((p) => p.fila.lead.nombre === nombre)?.motivo;
+
+beforeEach(async () => {
+  const mf = await createTestMiniflare();
+  const d1 = (await mf.getD1Database("DB")) as any;
+  db = new Db(d1);
+  env = { DB: d1, BUSINESS_NAME: "Bekai Colombia", BOT_TIER: "pro", DASHBOARD_BASE_URL: "https://bot.example" } as unknown as Env;
+});
+
+describe("por agendar", () => {
+  it("une Instagram y WhatsApp por teléfono y clasifica a cada persona", async () => {
+    await ig("zernio:00000001", "Persona Uno", "uno@ejemplo.com / 600000081");
+    await wa("34600000081", [["Buenas, el martes en la mañana después de las 11:00", 40]]);
+    await ig("zernio:00000002", "Persona Dos", "dos@ejemplo.com / +34600000082");
+    await wa("34600000082", [["Quiero casa, no apartamento", 20]]);
+    await ig("zernio:00000003", "Persona Tres", "tres@ejemplo.com / +34600000083");
+    await wa("34600000083", []);
+    await ig("zernio:00000004", "Persona Cuatro", "0700000084");
+    await ig("zernio:00000005", "Sin Tel", "");
+    expect(await motivoDe("Persona Uno")).toBe("propuso");
+    expect(await motivoDe("Persona Dos")).toBe("conversando");
+    expect(await motivoDe("Persona Tres")).toBe("sin_respuesta");
+    expect(await motivoDe("Persona Cuatro")).toBe("sin_contactar");
+    expect(await motivoDe("Sin Tel")).toBe("sin_telefono");
+    // la misma persona no sale dos veces (IG + WhatsApp)
+    expect((await cargarPorAgendar(env, {}, NOW)).filter((p) => p.fila.lead.nombre === "Persona Uno")).toHaveLength(1);
+    const orden = (await cargarPorAgendar(env, {}, NOW)).map((p) => p.motivo);
+    expect(orden[0]).toBe("propuso");
+  });
+
+  it("excluye a quien ya tiene videollamada agendada y respeta los fríos", async () => {
+    await ig("zernio:00000006", "Ya Agendada", "x@mail.com / 600111222");
+    await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, metadata, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      ["cita-x", "zernio:00000006", "x", "", "Cita · Videollamada · x", JSON.stringify({ calStart: new Date(NOW + 48 * H).toISOString(), estado: "Reservada (Cal.com)" }), "new", NOW - H, NOW - H]);
+    expect(await motivoDe("Ya Agendada")).toBeUndefined();
+    // cancelada: vuelve a la lista
+    await db.run("UPDATE leads SET metadata = ? WHERE id = 'cita-x'", [JSON.stringify({ calStart: new Date(NOW + 48 * H).toISOString(), estado: "Cancelada" })]);
+    expect(await motivoDe("Ya Agendada")).toBeDefined();
+  });
+
+  it("detecta propuestas de horario, normaliza teléfonos y arma la vista y el Excel", async () => {
+    for (const t of ["el 14/10 a las 5 pm hora de Suecia", "mañana estoy hasta las 4", "a partir del lunes temprano", "después de las 11"]) expect(proponeHorario(t)).toBe(true);
+    for (const t of ["Buenas", "Vale", "quiero casa, no apartamento"]) expect(proponeHorario(t)).toBe(false);
+    expect(clavePhone("cinco@ejemplo.com / 600000081")).toBe("600000081");
+    expect(clavePhone("+34 600 00 00 85")).toBe("600000085");
+    expect(clavePhone("0700000084")).toBe("700000084");
+    expect(clavePhone("abc")).toBe("");
+    await ig("zernio:00000007", "Marcela Ruiz", "+46700000086");
+    await wa("46700000086", [["el 14/10 a las 5 pm hora de Suecia", 30]]);
+    const html = await renderCrmPorAgendar(env, {}, NOW);
+    expect(html).toContain("Propuso horario");
+    expect(html).toContain("Marcela Ruiz");
+    expect(html).toContain("https://wa.me/46700000086");
+    expect((await excelPorAgendar(env, {}, NOW)).length).toBeGreaterThan(500);
+  });
+
+  it("clasificar: saca a la persona (IG y WhatsApp), la pasa a Perdido y se puede reactivar", async () => {
+    await ig("zernio:00000010", "Pedro Gil", "pedro@mail.com / 600111333");
+    await wa("34600111333", [["Hola", 10]]);
+    expect(await motivoDe("Pedro Gil")).toBeDefined();
+    expect((await descartarPersona(env, "zernio:00000010", "no_interesado", null, NOW)).n).toBe(2);
+    expect(await motivoDe("Pedro Gil")).toBeUndefined();
+    const desc = await cargarPorAgendar(env, { descartados: true }, NOW);
+    expect(desc.map((p) => p.fila.lead.nombre)).toContain("Pedro Gil");
+    expect(desc[0].descarte?.motivo).toBe("no_interesado");
+    const { cargarPipeline } = await import("../../member/crm-pipeline.local");
+    expect((await cargarPipeline(env, NOW)).find((t) => t.fila.lead.nombre === "Pedro Gil")?.etapa).toBe("perdido");
+    expect(await renderCrmPorAgendar(env, { motivo: "descartados" }, NOW)).toContain("No está interesado");
+    await reactivarPersona(env, "zernio:00000010");
+    expect(await motivoDe("Pedro Gil")).toBeDefined();
+    expect((await cargarPipeline(env, NOW)).find((t) => t.fila.lead.nombre === "Pedro Gil")?.etapa).not.toBe("perdido");
+  });
+
+  it("«más adelante» aplaza hasta la fecha y luego vuelve a la lista; motivo inválido se rechaza", async () => {
+    await ig("zernio:00000011", "Ana Pausa", "ana@mail.com / 600111444");
+    expect((await descartarPersona(env, "zernio:00000011", "inventado", null, NOW)).ok).toBe(false);
+    await descartarPersona(env, "zernio:00000011", "mas_adelante", "2026-11-20", NOW);
+    expect(await motivoDe("Ana Pausa")).toBeUndefined();
+    const despues = await cargarPorAgendar(env, {}, Date.UTC(2026, 10, 21));
+    const p = despues.find((x) => x.fila.lead.nombre === "Ana Pausa");
+    expect(p?.vuelve).toBe(true);
+  });
+});

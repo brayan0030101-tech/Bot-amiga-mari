@@ -206,6 +206,8 @@ export interface Env {
   COMPOSIO_ENTITY_ID?: string;  // opcional: filtra las cuentas conectadas por user_id (Composio v3); sin ella se usan TODAS las del proyecto
   OWNER_EMAIL: string;  // for handoff notifications (email)
   OWNER_TELEGRAM_CHAT_ID?: string;  // for handoff notifications (default channel)
+  // CRM propio (member/crm-app.local.ts): llave con la que se firman las sesiones. Sin ella el CRM no abre (503). Secreto de Worker, ≥ 16 caracteres.
+  CRM_SESSION_SECRET?: string;
   EQUIPO_TELEGRAM_CHAT_ID?: string; // la empresa: aviso a el equipo (equipo comercial) por Telegram
   EQUIPO_EMAIL?: string;            // la empresa: aviso a el equipo por correo (Resend)
   PROMPT_CACHE_TTL?: string;       // "1h" = el prompt grande dura 1 h en caché de Anthropic (default "5m")

@@ -53,10 +53,10 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Después de conectar: escribir al número desde otro teléfono y revisar que el bot conteste; configurar la plantilla de reenganche (fuera de 24 h) en **Plantillas** del panel.
 
 ## Bot en pausa general (desde 14 oct, 22:38 UTC) — hasta nuevo aviso
-- Pedido de Verónica: mientras no arranque la campaña, al número le escriben sobre todo contactos personales. Antes de la pausa el bot contestó a dos chats personales (+34 642 78 16 56 y +39 335 48 49 32).
+- Pedido de Verónica: mientras no arranque la campaña, al número le escriben sobre todo contactos personales. Antes de la pausa el bot contestó a dos chats personales (números de terceros omitidos por privacidad).
 - Pausa hecha con el interruptor general del panel (`settings.bot_paused = 1`, `bot_paused_until` vacío). No se tocó Zernio, el webhook, WhatsApp ni los secretos: los mensajes siguen entrando y quedan guardados en el panel, pero el bot no contesta ni hace seguimientos.
 - **Para reactivar:** panel → Agente → «Reactivar bot» (o poner `bot_paused = 0`).
-- **15 oct:** con la pausa puesta igual salió el mensaje fijo «Hola 😊 Muchas gracias por escribirme… ¿me puedes enviar tu número?» a 4 chats de WhatsApp (+34 608 50 24 30, +34 623 32 20 56, +34 658 75 36 49, +34 664 27 73 06). Venía del automatismo «pedir teléfono» (`followup/sistemaAtencion.ts`, cron cada 15 min), que no miraba la pausa general.
+- **15 oct:** con la pausa puesta igual salió el mensaje fijo «Hola 😊 Muchas gracias por escribirme… ¿me puedes enviar tu número?» a 4 chats de WhatsApp (números de terceros omitidos por privacidad). Venía del automatismo «pedir teléfono» (`followup/sistemaAtencion.ts`, cron cada 15 min), que no miraba la pausa general.
 - **Arreglado y desplegado (15 oct, 12:11 UTC, versión `2efd629a`):** con la pausa general ya no sale nada al cliente: ni los automatismos del sistema de atención, ni el recordatorio de citas, ni el aviso de mensaje repetido, ni el de archivo recibido. Los mensajes recibidos se guardan en el panel pero ya no se acumulan para contestarse al reactivar. Resumen diario y Excel internos siguen. No se tocó Zernio, webhook, secretos ni variables.
 
 ## Paso 1 (23 nov) — en la rama de trabajo, SIN desplegar
@@ -71,4 +71,10 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Ojo para cuando se active el bot: la cotización que pida un cliente la prepara y envía una persona (no hay cotizador automático) y los clientes reportados que no pueden ponerse al día no reciben videollamada.
 - 25 nov: las 20 conversaciones de prueba dieron 20 de 20 contra la IA real (con las limitaciones anotadas en el historial). El borrador sigue SIN guardar en la base; falta el visto bueno de Brayan para guardarlo.
 - 25 nov: **las reglas del bot ya están guardadas** en la base (`settings.custom_instructions`; copia en `member/reglas-del-bot.txt`). El bot sigue en pausa general y lo desplegado sigue siendo el código del 15 oct. Antes de reactivarlo: desplegar los pasos 1 y 2 (con permiso de Brayan) y probar con un caso real.
+
+## Paso 3 (25 nov) — CRM de Verónica: código listo, SIN desplegar
+- Pantallas en `/crm` (acceso propio; sin `CRM_SESSION_SECRET` no abre). Detalle en `HISTORIAL-DEL-PROYECTO.md`. Al desplegar: poner ese secreto y crear la primera invitación de administrador (con permiso de Brayan).
+- Ajustes nuevos opcionales: `auditor_reintentos` (apagado por defecto).
+- **PENDIENTE IMPORTANTE antes de reactivar el bot:** hoy solo contesta el primer mensaje de cada conversación (regla de «cliente antiguo»). Hay que arreglarla en el paso 7.
+- El repositorio sigue público y sus commits antiguos conservan teléfonos de terceros: pasarlo a privado.
 

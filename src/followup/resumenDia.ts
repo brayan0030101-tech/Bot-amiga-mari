@@ -1,5 +1,5 @@
 /**
- * Resumen diario para la asesora , una vez al día a las 8:00 (hora local):
+ * Resumen diario para la asesora, una vez al día a las 8:00 (hora local del bot):
  *
  *  1. Mensaje de Telegram con los leads de las últimas 24 h ordenados por
  *     prioridad (🔥 caliente / 🟡 tibio / ⚪ frío): a quién llamar primero, con
@@ -15,8 +15,9 @@ import { Db } from "../db/client";
 import { SettingsRepo } from "../db/settings";
 import { selfOrigin } from "../lib/self-origin";
 import { equipoConfigured, notifyEquipo, notifyEquipoDocument } from "../lib/equipo";
-import { buildXlsx, type Celda } from "../lib/xlsx";
 import { botTimezone } from "../time/dateAnchor";
+import { esWhatsApp, nombreCanal } from "../lib/canal";
+import { buildXlsx, type Celda } from "../lib/xlsx";
 
 const H = 3600_000;
 const MAX_LINEAS = 15;
@@ -53,6 +54,8 @@ export interface FichaLead {
 export interface Prioridad {
   nivel: "caliente" | "tibio" | "frio";
   puntos: number;
+  /** Por qué sumó (para el CRM): «Ahorro 20.000 € (+3)». */
+  razones: string[];
 }
 
 const CAMPOS_FICHA = [
@@ -60,22 +63,131 @@ const CAMPOS_FICHA = [
   "ahorroDisponible", "capacidadMensual", "tipoEmpleo", "antiguedadLaboral", "compraSoloOAcompanado",
 ];
 
+/**
+ * «Hora de llamada pedida: <algo>» de las notas, o "" si no hay hora real. El bot anota
+ * «Hora de llamada pedida: no indicada» cuando el cliente no la dio: eso NO cuenta como pedirla.
+ */
+export function horaDeLlamadaPedida(notas: string): string {
+  const m = notas.match(/hora de llamada[^|;\n]*/i)?.[0]?.trim() ?? "";
+  if (!m) return "";
+  const valor = m.replace(/^hora de llamada(?:\s+pedida)?\s*:?\s*/i, "").trim();
+  if (!valor || /^(no\b|sin\b|ninguna|n\/a|ni\b|[-—–.]+$)/i.test(valor)) return "";
+  return m;
+}
+
 export function puntuarLead(f: FichaLead): Prioridad {
   const m = f.metadata;
   let p = 0;
+  const razones: string[] = [];
+  const suma = (n: number, motivo: string) => {
+    if (n <= 0) return;
+    p += n;
+    razones.push(`${motivo} (+${n})`);
+  };
   const ahorro = parseMonto(m.ahorroDisponible);
   const dijoSi = /(s[ií]\s+(tiene|cuenta|dispone)|tiene\s+ahorro|ahorro\s+disponible)/i.test(m.ahorroDisponible ?? "") && !/\bno\b/i.test((m.ahorroDisponible ?? "").slice(0, 12));
-  p += ahorro >= 15_000 ? 3 : ahorro >= 5_000 ? 2 : ahorro > 0 || dijoSi ? 1 : 0;
+  suma(ahorro >= 15_000 ? 3 : ahorro >= 5_000 ? 2 : ahorro > 0 || dijoSi ? 1 : 0, `Ahorro ${m.ahorroDisponible ?? ""}`.trim());
   const mes = parseMonto(m.capacidadMensual);
-  p += mes >= 800 ? 2 : mes >= 300 ? 1 : 0;
-  if (/(contrato|indefinid|fijo|empleado|n[oó]mina|aut[oó]nomo|empresa|funcionari)/i.test(m.tipoEmpleo ?? "")) p += 1;
-  if (/(inmediat|ya\b|ahora|pronto)/i.test(m.entregaInmediataOFutura ?? "")) p += 2;
-  if (f.telefono) p += 1;
+  suma(mes >= 800 ? 2 : mes >= 300 ? 1 : 0, `Cuota mensual ${m.capacidadMensual ?? ""}`.trim());
+  if (/(contrato|indefinid|fijo|empleado|n[oó]mina|aut[oó]nomo|empresa|funcionari)/i.test(m.tipoEmpleo ?? "")) suma(1, `Empleo: ${m.tipoEmpleo}`);
+  if (/(inmediat|ya\b|ahora|pronto)/i.test(m.entregaInmediataOFutura ?? "")) suma(2, "Quiere entrega inmediata");
+  if (f.telefono) suma(1, "Dejó su teléfono");
   const ingresos = parseMonto(m.ingresosMensuales);
-  p += ingresos >= 2_000 ? 1 : 0;
-  if (/hora de llamada/i.test(f.notas)) p += 1;
-  if (CAMPOS_FICHA.filter((k) => m[k]).length >= 6) p += 1;
-  return { puntos: p, nivel: p >= 6 ? "caliente" : p >= 3 ? "tibio" : "frio" };
+  if (ingresos >= 2_000) suma(1, `Ingresos ${m.ingresosMensuales}`);
+  if (horaDeLlamadaPedida(f.notas)) suma(1, "Pidió hora de llamada");
+  if (CAMPOS_FICHA.filter((k) => m[k]).length >= 6) suma(1, "Ficha casi completa");
+  const cal = evaluarCalificacion(m, p);
+  if (cal.motivo) razones.push(cal.motivo);
+  return { puntos: p, nivel: cal.nivel, razones };
+}
+
+/** Tipo de cambio que usa la empresa para pasar pesos a euros (1,5 millones ≈ 400 €). */
+const COP_POR_EURO = 3_700;
+const NUM_PALABRA: Record<string, number> = { un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
+
+/** Euros aproximados de un monto en texto libre: acepta euros («1.500 €») y pesos («1.500.000», «un millón quinientos», «2 millones COP»). */
+export function parseEuros(texto: string | null | undefined): number {
+  const t = String(texto ?? "").toLowerCase();
+  if (!t.trim()) return 0;
+  const euros = /€|eur/.test(t);
+  let n = 0;
+  const pal = t.match(/\b(un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+mill[oó]n(?:es)?(\s+y\s+medio|\s+quinientos)?/);
+  if (pal) n = NUM_PALABRA[pal[1]] * 1_000_000 + (pal[2] ? 500_000 : 0);
+  else {
+    const m = t.match(/(\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?)\s*(millones|mill[oó]n|miles|mil|k)?(?![a-záéíóúñ])/);
+    if (!m) return 0;
+    let raw = m[1];
+    if (/^\d{1,3}([.,]\d{3})+$/.test(raw)) raw = raw.replace(/[.,]/g, "");
+    else raw = raw.replace(",", ".");
+    n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    const suf = m[2] ?? "";
+    if (/^mill/.test(suf)) n *= 1_000_000;
+    else if (suf === "mil" || suf === "miles" || suf === "k") n *= 1_000;
+  }
+  if (!euros && (/cop|peso|colomb|mill[oó]n|millones/.test(t) || n >= 100_000)) n = n / COP_POR_EURO;
+  return Math.round(n);
+}
+
+export const CAMPOS_PREGUNTAS = ["ciudadResidencia", "ciudadCompra", "entregaInmediataOFutura", "ahorroDisponible", "capacidadMensual", "tipoEmpleo", "ingresosMensuales"];
+
+export interface Calificacion {
+  nivel: "caliente" | "tibio" | "frio";
+  ingresos: number;
+  cuota: number;
+  reportado: boolean;
+  /** true = dijo que se pone al día pronto; false = no; null = no se sabe. */
+  puedeQuitarReporte: boolean | null;
+  completo: boolean;
+  faltan: string[];
+  motivo?: string;
+}
+
+const esSi = (t: string | undefined) => !!t && !/^\s*no\b/i.test(t) && (/^\s*s[ií](?![a-záéíóúñ])/i.test(t) || /reportad|mora|deuda|negativ/i.test(t));
+
+/**
+ * Calificación (reglas de la empresa y del dueño, 21 oct 2026; Datacrédito según la decisión del 25 nov 2026). Ingresos en euros (con pareja o familiar que compra con él, se suman).
+ *  · Caliente: empleado + ingresos ≥ 1.500 € + destina ≥ 400 €/mes + NO reportado en Datacrédito.
+ *  · Tibio: ingresos ≥ 1.300 € y destina ≥ 300 €/mes (también quien está reportado pero dice que se pone al día pronto).
+ *  · Frío: ingresos < 1.300 € o destina < 300 €/mes (≈ 1 millón de pesos), o reportado sin posibilidad de ponerse al día.
+ *    EXCEPCIÓN 1: ingresos ≥ 2.000 € (sumados con la pareja) = caliente aunque destine poco (26 oct 2026).
+ *    EXCEPCIÓN 2: quien declara ahorros (ahorroDisponible > 0) nunca queda frío por cuota o ingresos bajos: queda tibio (26 oct 2026).
+ * Si faltan datos de ingresos o cuota, se usa el puntaje antiguo (tibio con 3 puntos o más, nunca caliente).
+ */
+export function evaluarCalificacion(m: Record<string, string>, puntos = 0): Calificacion {
+  const acompanado = /acompa|pareja|espos|con otra|con mi|familia|hermano|padre|madre|socio|novi/i.test(m.compraSoloOAcompanado ?? "") && !/^\s*(solo|sola|no)\b/i.test(m.compraSoloOAcompanado ?? "");
+  const ingresos = parseEuros(m.ingresosMensuales) + (acompanado ? parseEuros(m.ingresosCoComprador) : 0);
+  const cuota = parseEuros(m.capacidadMensual);
+  const empleado = /(emplead|contrato|n[oó]mina|funcionari|asalariad)/i.test(m.tipoEmpleo ?? "") && !/(aut[oó]nomo|independiente|por (su|mi) cuenta)/i.test(m.tipoEmpleo ?? "");
+  const reportado = esSi(m.reportadoDatacredito);
+  const q = m.puedeQuitarReporte ?? "";
+  const puedeQuitarReporte = !q.trim() ? null : /^\s*no\b/i.test(q) ? false : /s[ií]|pronto|al d[ií]a|pagar|pago|saldar/i.test(q) ? true : null;
+  const faltan = CAMPOS_PREGUNTAS.filter((k) => !String(m[k] ?? "").trim());
+  if (reportado && puedeQuitarReporte === null && !String(m.puedeQuitarReporte ?? "").trim()) faltan.push("puedeQuitarReporte");
+  const base = { ingresos, cuota, reportado, puedeQuitarReporte, completo: faltan.length === 0, faltan };
+
+  let nivel: Calificacion["nivel"];
+  let motivo: string | undefined;
+  if (cuota > 0 && cuota < 300) { nivel = "frio"; motivo = "Destina menos de 300 € al mes"; }
+  else if (ingresos > 0 && ingresos < 1_300) { nivel = "frio"; motivo = "Ingresos menores de 1.300 € al mes"; }
+  else if (ingresos > 0 && cuota > 0) {
+    nivel = empleado && ingresos >= 1_500 && cuota >= 400 ? "caliente" : "tibio";
+    if (nivel === "caliente") motivo = "Perfil caliente: empleado, ingresos de 1.500 € o más y cuota de 400 € o más";
+  } else nivel = puntos >= 3 ? "tibio" : "frio";
+  // Regla de la empresa (26 oct 2026): ingresos de 2.000 € o más (sumando a la pareja si compran juntos) = CALIENTE aunque hoy diga que solo puede destinar poco:
+  // si le gusta una propiedad podrá destinar más.
+  if (ingresos >= 2_000) { nivel = "caliente"; motivo = "Ingresos de 2.000 € o más: caliente aunque hoy destine poco (podrá destinar más si le interesa una propiedad)"; }
+  // Regla de la empresa (31 oct 2026): quien paga de contado (o tiene ahorros de 30.000 € o más) es CALIENTE: no necesita financiación, se le habla de la videollamada.
+  const ahorro = parseEuros(m.ahorroDisponible);
+  if (ahorro >= 30_000 || /de contado|contado/i.test(`${m.ahorroDisponible ?? ""} ${m.motivoCompra ?? ""} ${m.entregaInmediataOFutura ?? ""}`)) { nivel = "caliente"; motivo = "Compra de contado o ahorros de 30.000 € o más: caliente (no depende de la financiación)"; }
+  // Regla de la empresa (26 oct 2026): quien tiene AHORROS no se descarta. Con ahorro declarado, la cuota o los ingresos bajos no lo dejan frío (queda tibio).
+  const tieneAhorro = parseEuros(m.ahorroDisponible) > 0;
+  if (nivel === "frio" && tieneAhorro) { nivel = "tibio"; motivo = "Tiene ahorros: no se descarta aunque su cuota o ingresos sean bajos"; }
+  if (reportado) {
+    if (puedeQuitarReporte === false) { nivel = "frio"; motivo = "Reportado en Datacrédito y no puede ponerse al día"; }
+    else if (nivel === "caliente") { nivel = "tibio"; motivo = "Reportado en Datacrédito: no es caliente hasta ponerse al día"; }
+  }
+  return { nivel, motivo, ...base };
 }
 
 // ─── Datos de los leads ────────────────────────────────────────────────────────
@@ -104,14 +216,16 @@ export interface LeadResumen {
   ficha: FichaLead;
   prioridad: Prioridad;
   horaLlamada: string;
+  /** Videollamada ya agendada en Cal.com (fecha y hora de España), si la hay. */
+  llamada: string;
 }
 
-function canalDe(channel: string): string {
-  return channel === "ycloud" ? "WhatsApp" : channel === "zernio" || channel === "instagram" ? "Instagram" : channel === "telegram" ? "Telegram" : channel;
+function canalDe(channel: string, channelUserId: string): string {
+  return nombreCanal(channel, channelUserId);
 }
 
 /** Junta los leads de cada conversación (el dato más reciente de cada campo gana). */
-export function armarLeads(convs: ConvInfo[], leads: LeadRow[]): LeadResumen[] {
+export function armarLeads(convs: ConvInfo[], leads: LeadRow[], llamadas: Map<string, number> = new Map()): LeadResumen[] {
   const porConv = new Map<string, LeadRow[]>();
   for (const l of leads) {
     if (!l.conversation_id) continue;
@@ -139,19 +253,20 @@ export function armarLeads(convs: ConvInfo[], leads: LeadRow[]): LeadResumen[] {
         else if (k.replace(/\D/g, "").length >= 7 && !telefonos.includes(k)) telefonos.push(k);
       }
     }
-    const telefono = c.channel === "ycloud" ? `+${c.channel_user_id}` : (telefonos[telefonos.length - 1] ?? "");
+    const telefono = esWhatsApp(c.channel, c.channel_user_id) ? `+${c.channel_user_id.replace(/^\+/, "")}` : (telefonos[telefonos.length - 1] ?? "");
     const notasTxt = notas.join(" | ");
     const ficha: FichaLead = { metadata: meta, notas: notasTxt, telefono };
-    const hora = notasTxt.match(/hora de llamada[^|;\n]*/i)?.[0]?.trim() ?? "";
+    const hora = horaDeLlamadaPedida(notasTxt);
     out.push({
       convId: c.id,
-      canal: canalDe(c.channel),
+      canal: canalDe(c.channel, c.channel_user_id),
       nombre: nombre || c.display_name || "(sin nombre)",
       telefono,
       correo: correos.join(", "),
       ficha,
       prioridad: puntuarLead(ficha),
       horaLlamada: hora,
+      llamada: llamadas.has(c.id) ? formatoLlamada(llamadas.get(c.id)!) : "",
     });
   }
   return out;
@@ -174,6 +289,31 @@ export function correoParaFormulario(l: LeadResumen): { correo: string; inventad
   return { correo: `${slug}@${DOMINIO_SIN_CORREO}`, inventado: true };
 }
 
+/** «mar 14 oct, 10:00» en hora de España. */
+export function formatoLlamada(ms: number, tz = "Europe/Madrid"): string {
+  return new Intl.DateTimeFormat("es-ES", {
+    timeZone: tz, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(new Date(ms));
+}
+
+/** Videollamadas reservadas en Cal.com que aún no pasaron: conversación → instante de inicio. */
+export async function llamadasAgendadas(db: Db, now: number): Promise<Map<string, number>> {
+  const rows = await db.all<{ conversation_id: string | null; metadata: string | null }>(
+    "SELECT conversation_id, metadata FROM leads WHERE intent LIKE 'Cita ·%' AND updated_at > ?",
+    [now - 30 * 24 * H],
+  );
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.conversation_id || !r.metadata) continue;
+    try {
+      const m = JSON.parse(r.metadata) as { calStart?: string; estado?: string };
+      const t = m.calStart ? Date.parse(m.calStart) : NaN;
+      if (m.estado === "Reservada (Cal.com)" && Number.isFinite(t) && t > now) out.set(r.conversation_id, t);
+    } catch { /* metadata rota */ }
+  }
+  return out;
+}
+
 /** Datos que exige el formulario y que aún no tenemos del cliente (el correo no cuenta: se inventa). */
 export function faltantes(l: LeadResumen): string[] {
   const m = l.ficha.metadata;
@@ -192,7 +332,7 @@ export function lineaLead(l: LeadResumen, formUrl?: string): string {
   const m = l.ficha.metadata;
   const partes = [
     `${ICONO[l.prioridad.nivel]} ${l.nombre} · ${l.canal}${l.telefono ? ` · ${l.telefono}` : " · SIN TELÉFONO"}`,
-    l.horaLlamada ? `📞 ${l.horaLlamada}` : "",
+    l.llamada ? `📞 Llamada agendada: ${l.llamada} (hora de España)` : l.horaLlamada ? `📞 ${l.horaLlamada}` : "",
     [m.ciudadResidencia && `Vive: ${m.ciudadResidencia}`, m.ciudadCompra && `Quiere: ${m.ciudadCompra}`].filter(Boolean).join(" · "),
     [m.ahorroDisponible && `Ahorro: ${m.ahorroDisponible}`, m.capacidadMensual && `Mensual: ${m.capacidadMensual}`, m.tipoEmpleo && `Trabajo: ${m.tipoEmpleo}`, m.ingresosMensuales && `Ingresos: ${m.ingresosMensuales}`].filter(Boolean).join(" · "),
     formUrl
@@ -248,7 +388,7 @@ function opcion(texto: string | undefined, opciones: string[], alias: Record<str
 
 /**
  * Enlace del formulario con los datos del cliente ya escritos (Zoho Forms admite
- * valores iniciales por la URL). la asesora solo revisa, marca los términos y envía.
+ * valores iniciales por la URL). La asesora solo revisa, marca los términos y envía.
  * Los campos fijos del formulario (fuente, canal, etc.) los pone el propio formulario.
  */
 export function urlFormulario(base: string, l: LeadResumen): string {
@@ -309,6 +449,29 @@ function zonaParts(tz: string, now: number): { hora: number; dia: string } {
   return { hora: Number(p.hour) % 24, dia: `${p.year}-${p.month}-${p.day}` };
 }
 
+/**
+ * Línea del resumen: cuántas videollamadas agendó el bot y cuántas se le fueron a
+ * la asesora por el comodín («otro horario»). Tablas chicas, una vez al día.
+ */
+export async function lineaLlamadas(db: Db, now: number): Promise<string> {
+  const cuenta = async (desde: number) => {
+    const agendadas = await db.first<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM leads
+        WHERE created_at > ? AND intent LIKE 'Cita · Videollamada%'
+          AND json_extract(COALESCE(metadata, '{}'), '$.estado') = 'Reservada (Cal.com)'`,
+      [desde],
+    );
+    const comodin = await db.first<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM tickets WHERE created_at > ? AND summary LIKE '%otro horario%'",
+      [desde],
+    );
+    return { a: agendadas?.n ?? 0, c: comodin?.n ?? 0 };
+  };
+  const dia = await cuenta(now - 24 * H);
+  const semana = await cuenta(now - 7 * 24 * H);
+  return `📞 Llamadas · el bot agendó ${dia.a} (pasó a la asesora por otro horario: ${dia.c}) · últimos 7 días: ${semana.a} agendadas, ${semana.c} por comodín`;
+}
+
 export async function runResumenDia(env: Env, now = Date.now()): Promise<{ sent: boolean; leads: number }> {
   const { hora, dia } = zonaParts(botTimezone(env), now);
   if (hora !== 8 || !equipoConfigured(env)) return { sent: false, leads: 0 };
@@ -331,13 +494,18 @@ export async function runResumenDia(env: Env, now = Date.now()): Promise<{ sent:
       [now - 14 * 24 * H],
     )
   ).filter((l) => l.conversation_id && ids.has(l.conversation_id));
-  const leads = armarLeads(convs, leadsRows);
+  const leads = armarLeads(convs, leadsRows, await llamadasAgendadas(db, now));
   if (leads.length === 0) return { sent: false, leads: 0 };
 
   const url = `${await selfOrigin(env)}/admin`;
   const settings = new SettingsRepo(db);
   const formUrl = ((await settings.get(SETTING_FORM_URL)) ?? "").trim() || undefined;
   const msgs = mensajesResumen(leads, url, formUrl);
+  try {
+    msgs[0] = `${await lineaLlamadas(db, now)}\n\n${msgs[0]}`;
+  } catch (e) {
+    console.error("[resumenDia] lineaLlamadas:", e);
+  }
   for (let i = 0; i < msgs.length; i++) {
     await notifyEquipo(env, {
       heading: i === 0 ? "☀️ Resumen del día" : `☀️ Resumen del día (${i + 1}/${msgs.length})`,
@@ -438,7 +606,7 @@ export const AYUDA_EQUIPO =
   "• pendientes — lista los que faltan por registrar\n\n" +
   "Los avisos de clientes nuevos llegan solos, con el enlace del formulario ya rellenado.";
 
-/** Responde a un mensaje del equipo (el equipo). Devuelve el texto de respuesta. */
+/** Responde a un mensaje del equipo. Devuelve el texto de respuesta. */
 export async function comandoEquipo(env: Env, texto: string, now = Date.now()): Promise<string> {
   const db = new Db(env.DB);
   const t = texto.trim();
@@ -474,7 +642,7 @@ export async function comandoEquipo(env: Env, texto: string, now = Date.now()): 
   return AYUDA_EQUIPO;
 }
 
-// ─── Excel de clientes listos (6:00 y 14:00 (hora local)) ─────────────────────────
+// ─── Excel de clientes listos (6:00 y 14:00 de España) ─────────────────────────
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const HORAS_EXCEL = [6, 14];
@@ -498,13 +666,13 @@ export async function leadsListos(db: Db, now: number): Promise<LeadResumen[]> {
     )
   ).filter((l) => l.conversation_id && ids.has(l.conversation_id));
   const orden = { caliente: 0, tibio: 1, frio: 2 } as const;
-  return armarLeads(convs, rows)
+  return armarLeads(convs, rows, await llamadasAgendadas(db, now))
     .filter((l) => faltantes(l).length === 0)
     .sort((a, b) => orden[a.prioridad.nivel] - orden[b.prioridad.nivel] || b.prioridad.puntos - a.prioridad.puntos);
 }
 
 export function excelListos(leads: LeadResumen[], formUrl?: string): Uint8Array {
-  const head = ["#", "Prioridad", "Canal", "Nombres", "Apellidos", "Correo", "Nota del correo", "Teléfono", "Ciudad de interés", "País de residencia", "Ciudad de residencia", "Ahorro", "Ingresos mensuales", "Enlace del formulario"];
+  const head = ["#", "Prioridad", "Canal", "Nombres", "Apellidos", "Correo", "Nota del correo", "Teléfono", "Ciudad de interés", "País de residencia", "Ciudad de residencia", "Ahorro", "Ingresos mensuales", "Llamada agendada", "Enlace del formulario"];
   const icono = { caliente: "🔥 Caliente", tibio: "🟡 Tibio", frio: "⚪ Frío" } as const;
   const rows: Celda[][] = [head];
   leads.forEach((l, i) => {
@@ -517,15 +685,15 @@ export function excelListos(leads: LeadResumen[], formUrl?: string): Uint8Array 
       correoParaFormulario(l).correo, correoParaFormulario(l).inventado ? "⚠️ Correo inventado: el cliente no lo dio" : "", l.telefono,
       opcion(m.ciudadCompra, CIUDADES_FORM) || m.ciudadCompra || "",
       opcion(pais, PAISES_FORM, { "estados unidos": "USA", eeuu: "USA", "ee.uu": "USA", usa: "USA" }) || pais || "",
-      ciudad.join(", "), m.ahorroDisponible ?? "", m.ingresosMensuales ?? "",
+      ciudad.join(", "), m.ahorroDisponible ?? "", m.ingresosMensuales ?? "", l.llamada,
       formUrl ? { text: "Abrir formulario", url: urlFormulario(formUrl, l) } : "",
     ]);
   });
-  return buildXlsx([{ name: "Listos para registrar", rows, widths: [4, 13, 11, 18, 22, 36, 30, 17, 18, 18, 20, 24, 20, 20] }]);
+  return buildXlsx([{ name: "Listos para registrar", rows, widths: [4, 13, 11, 18, 22, 36, 30, 17, 18, 18, 20, 24, 20, 22, 20] }]);
 }
 
 /**
- * A las 6:00 y 14:00 (hora local) manda a el equipo el Excel con los clientes
+ * A las 6:00 y 14:00 (hora local del bot) manda al equipo el Excel con los clientes
  * que ya están listos para el formulario (los nuevos desde el último envío). Si no
  * hay nuevos, un aviso corto. Una vez por franja y día.
  */

@@ -1,0 +1,2 @@
+// Logo del CRM: solo el nombre de la marca en texto (sin imagen de otra empresa). Cámbialo por el logo real cuando Verónica lo tenga.
+export const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 44" role="img" aria-label="Bekai Colombia"><text x="0" y="31" font-family="Poppins, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.5" fill="#FFFFFF">Bekai Colombia</text></svg>`;

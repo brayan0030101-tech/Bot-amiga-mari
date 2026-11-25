@@ -1,0 +1,165 @@
+/**
+ * CRM de Verónica (fase 1): lista por prioridad, ficha del cliente y conversación completa.
+ */
+import { describe, it, expect, beforeEach } from "vitest";
+import { createTestMiniflare } from "../helpers/miniflareSetup";
+import { Db } from "../../src/db/client";
+import { cargarCrm, filtrarCrm, renderCrmLista, renderCrmFicha, guardarNota, excelCrm, mensajeHtml } from "../../member/crm.local";
+import type { Env } from "../../src/env";
+
+let env: Env;
+let db: Db;
+const NOW = Date.UTC(2026, 9, 20, 12, 0);
+
+async function cliente(id: string, channel: string, user: string, nombre: string, meta: Record<string, string>, contact = "") {
+  await db.run("INSERT INTO conversations (id, channel, channel_user_id, display_name, started_at, last_message_at) VALUES (?,?,?,?,?,?)", [id, channel, user, nombre, NOW - 5000, NOW - 1000]);
+  await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, metadata, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+    [`l-${id}`, id, nombre, contact, "compra", JSON.stringify(meta), "new", NOW - 4000, NOW - 4000]);
+}
+async function msg(conv: string, role: string, content: string, at: number) {
+  await db.run("INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?,?,?,?,?)", [crypto.randomUUID(), conv, role, content, at]);
+}
+
+beforeEach(async () => {
+  const mf = await createTestMiniflare();
+  const d1 = (await mf.getD1Database("DB")) as any;
+  db = new Db(d1);
+  env = { DB: d1, BUSINESS_NAME: "Bekai Colombia", BOT_TIER: "pro" } as unknown as Env;
+  await cliente("ycloud:34600000001", "ycloud", "34600000001", "Ana López Ruiz",
+    { ahorroDisponible: "20 mil euros", ingresosMensuales: "2000", capacidadMensual: "1000", tipoEmpleo: "contrato indefinido", entregaInmediataOFutura: "ahora", ciudadCompra: "Medellín", ciudadResidencia: "España, Madrid" }, "ana@correo.com");
+  await cliente("zernio:99", "zernio", "99", "pepe_ig", {});
+  await msg("ycloud:34600000001", "user", "Hola <b>buenas</b>", NOW - 3000);
+  await msg("ycloud:34600000001", "assistant", "¿Qué día te queda mejor?\n[[botones: Lun 12 oct | Mar 13 oct]]", NOW - 2500);
+  await msg("ycloud:34600000001", "owner", "Te llamo yo mañana", NOW - 2000);
+});
+
+describe("lista del CRM", () => {
+  it("clasifica y ordena: caliente primero, con su canal", async () => {
+    const filas = await cargarCrm(env, NOW);
+    expect(filas.map((f) => f.lead.nombre)).toContain("Ana López Ruiz");
+    const ana = filas.find((f) => f.lead.nombre.startsWith("Ana"))!;
+    expect(ana.lead.prioridad.nivel).toBe("caliente");
+    expect(ana.lead.prioridad.razones.length).toBeGreaterThan(2);
+    const html = await renderCrmLista(env, {}, NOW);
+    expect(html).toContain("Ana López Ruiz");
+    expect(html).toContain("Calientes");
+    expect(html.indexOf("Ana López Ruiz")).toBeLessThan(html.indexOf("pepe_ig"));
+  });
+
+  it("filtra por nivel, canal y búsqueda", async () => {
+    const filas = await cargarCrm(env, NOW);
+    expect(filtrarCrm(filas, { nivel: "caliente" }).map((f) => f.lead.canal)).toEqual(["WhatsApp"]);
+    expect(filtrarCrm(filas, { canal: "instagram" })).toHaveLength(1);
+    expect(filtrarCrm(filas, { q: "medellin" })).toHaveLength(1); // sin tildes
+    expect(filtrarCrm(filas, { q: "no existe" })).toHaveLength(0);
+  });
+});
+
+describe("ficha del cliente", () => {
+  it("muestra datos, prioridad y la conversación completa (cliente, bot y equipo) sin romper el HTML", async () => {
+    const html = (await renderCrmFicha(env, "ycloud:34600000001", {}, NOW))!;
+    expect(html).toContain("Ana López Ruiz");
+    expect(html).toContain("Ahorro disponible");
+    expect(html).toContain("Quiere entrega inmediata");
+    expect(html).toContain("&lt;b&gt;buenas&lt;/b&gt;"); // el HTML del cliente se escapa
+    expect(html).not.toContain("<b>buenas</b>");
+    expect(html).toContain("Te llamo yo mañana");
+    expect(html).toContain("Equipo (persona)");
+    expect(html).toContain("Mar 13 oct"); // botones como chips
+    expect(html).not.toContain("[[botones");
+  });
+
+  it("la estrella agrega a «Más probables de comprar» y, ya agregado, permite quitarlo", async () => {
+    const { fijarEtapa } = await import("../../member/crm-pipeline.local");
+    const antes = (await renderCrmFicha(env, "ycloud:34600000001", {}, NOW))!;
+    expect(antes).toContain("Agregar a más probables de comprar");
+    expect(antes).toContain("☆");
+    expect(antes).toContain('hx-post="/crm/etapa"');
+    expect(antes).toContain('"etapa":"probable"');
+    await fijarEtapa(env, "ycloud:34600000001", "probable");
+    const despues = (await renderCrmFicha(env, "ycloud:34600000001", {}, NOW))!;
+    expect(despues).toContain("En «Más probables de comprar»");
+    expect(despues).toContain("⭐");
+    expect(despues).toContain('"etapa":"auto"');
+    expect(despues).toContain("hx-confirm");
+    await fijarEtapa(env, "ycloud:34600000001", "cerrado");
+    expect((await renderCrmFicha(env, "ycloud:34600000001", {}, NOW))!).toContain("Este cliente está marcado como «Cerrado»");
+  });
+
+  it("devuelve null si el cliente no existe", async () => {
+    expect(await renderCrmFicha(env, "ycloud:0", {}, NOW)).toBeNull();
+  });
+
+  it("guarda la nota interna y la muestra", async () => {
+    await guardarNota(env, "ycloud:34600000001", "Prefiere por la tarde");
+    const html = (await renderCrmFicha(env, "ycloud:34600000001", { guardado: true }, NOW))!;
+    expect(html).toContain("Prefiere por la tarde");
+    expect(html).toContain("Guardada");
+  });
+});
+
+describe("otros", () => {
+  it("mensajeHtml convierte marcadores en chips", () => {
+    const h = mensajeHtml("Hola\n[[botones: a | b]]");
+    expect(h).toContain(">a<");
+    expect(h).not.toContain("[[");
+  });
+  it("el Excel de la lista se genera", async () => {
+    const x = await excelCrm(env, { nivel: "caliente" }, NOW);
+    expect(x.length).toBeGreaterThan(200);
+    expect(String.fromCharCode(x[0], x[1])).toBe("PK");
+  });
+});
+
+describe("filtro de prioridad", () => {
+  it("la lista trae el desplegable de prioridad y filtra por caliente / tibio / frío", async () => {
+    const html = await renderCrmLista(env, { nivel: "caliente" }, NOW);
+    expect(html).toContain('name="nivel"');
+    expect(html).toContain("🔥 Calientes");
+    expect(html).toContain('<option value="caliente" selected>');
+    expect(html).toContain("Ana López Ruiz");
+    expect(html).not.toContain("pepe_ig"); // el frío queda fuera
+    const frios = await renderCrmLista(env, { nivel: "frio" }, NOW);
+    expect(frios).toContain("pepe_ig");
+    expect(frios).not.toContain("Ana López Ruiz");
+  });
+});
+
+describe("clientes de WhatsApp que entran por Zernio (el caso de este bot)", () => {
+  it("un teléfono por Zernio sale como WhatsApp, con su +teléfono; un id largo sale como Instagram", async () => {
+    await cliente("zernio:34600000011", "zernio", "34600000011", "Laura Pérez", { ciudadCompra: "Cali", ahorroDisponible: "8000 euros" });
+    await cliente("zernio:17841400000000001", "zernio", "17841400000000001", "perfil_ig", { ciudadCompra: "Cali" });
+    const filas = await cargarCrm(env, NOW);
+    const laura = filas.find((f) => f.lead.nombre === "Laura Pérez")!;
+    expect(laura.lead.canal).toBe("WhatsApp");
+    expect(laura.lead.telefono).toBe("+34600000011");
+    const ig = filas.find((f) => f.lead.nombre === "perfil_ig")!;
+    expect(ig.lead.canal).toBe("Instagram");
+    expect(ig.lead.telefono).toBe("");
+  });
+
+  it("la ficha de una clienta de WhatsApp NO dice «Perfil de Instagram»; la de un perfil de Instagram sí", async () => {
+    await cliente("zernio:34600000011", "zernio", "34600000011", "Laura Pérez", { ciudadCompra: "Cali" });
+    await cliente("zernio:17841400000000001", "zernio", "17841400000000001", "perfil_ig", { ciudadCompra: "Cali" });
+    const wa = await renderCrmFicha(env, "zernio:34600000011", {}, NOW);
+    const ig = await renderCrmFicha(env, "zernio:17841400000000001", {}, NOW);
+    expect(wa).not.toContain("Perfil de Instagram");
+    expect(ig).toContain("Perfil de Instagram");
+    expect(ig).toContain("@perfil_ig");
+    const filas = await cargarCrm(env, NOW);
+    expect(filas.find((f) => f.lead.nombre === "Laura Pérez")!.perfil).toBe("");
+    expect(filas.find((f) => f.lead.nombre === "perfil_ig")!.perfil).toBe("perfil_ig");
+  });
+
+  it("la ficha de ese cliente muestra su teléfono y deja escribirle por WhatsApp", async () => {
+    await cliente("zernio:34600000011", "zernio", "34600000011", "Laura Pérez", { ciudadCompra: "Cali" });
+    const html = await renderCrmFicha(env, "zernio:34600000011", {}, NOW);
+    expect(html).toContain("+34600000011");
+  });
+
+  it("la lista no trae nada de la otra empresa (marca, nombres, cotizaciones, Zoho API)", async () => {
+    const html = await renderCrmLista(env, {}, NOW);
+    expect(html).not.toMatch(new RegExp(["vi" + "venta", "mari" + "cela", "cam" + "ila", "vive" + "home", "#E60" + "D6F"].join("|"), "i"));
+    expect(html).toContain("Verónica Rivera");
+  });
+});

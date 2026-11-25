@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createTestMiniflare } from "../helpers/miniflareSetup";
 import { Db } from "../../src/db/client";
 import {
-  parseMonto, puntuarLead, armarLeads, csvZoho, mensajesResumen, urlFormulario, runResumenDia, comandoEquipo, enlaceRegistro, AYUDA_EQUIPO, faltantes, runExcelListos, leadsListos, correoParaFormulario,
+  parseMonto, parseEuros, evaluarCalificacion, puntuarLead, armarLeads, csvZoho, mensajesResumen, urlFormulario, runResumenDia, comandoEquipo, enlaceRegistro, AYUDA_EQUIPO, faltantes, runExcelListos, leadsListos, correoParaFormulario, lineaLlamadas,
 } from "../../src/followup/resumenDia";
 import type { Env } from "../../src/env";
 
@@ -25,12 +25,78 @@ describe("parseMonto", () => {
   });
 });
 
+describe("calificación (reglas de la empresa, 21 oct 2026)", () => {
+  const ficha = (m: Record<string, string>) => ({ metadata: m, notas: "", telefono: "" });
+  const caliente = { tipoEmpleo: "Empleado", ingresosMensuales: "1500 euros", capacidadMensual: "400 euros", reportadoDatacredito: "No" };
+  it("caliente: empleado, ingresos ≥ 1.500 €, cuota ≥ 400 € y no reportado", () => {
+    const p = puntuarLead(ficha(caliente));
+    expect(p.nivel).toBe("caliente");
+    expect(p.razones.join(" ")).toContain("Perfil caliente");
+  });
+  it("la cuota en pesos cuenta (1,5 millones ≈ 400 €; «un millón quinientos»)", () => {
+    expect(puntuarLead(ficha({ ...caliente, capacidadMensual: "1.500.000" })).nivel).toBe("caliente");
+    expect(puntuarLead(ficha({ ...caliente, capacidadMensual: "un millón quinientos" })).nivel).toBe("caliente");
+    expect(parseEuros("1 millón")).toBe(270);
+  });
+  it("tibio: ingresos ≥ 1.300 € y cuota ≥ 300 € pero no cumple lo de caliente", () => {
+    expect(puntuarLead(ficha({ ...caliente, capacidadMensual: "350 euros" })).nivel).toBe("tibio");
+    expect(puntuarLead(ficha({ ...caliente, ingresosMensuales: "1400 euros" })).nivel).toBe("tibio");
+    expect(puntuarLead(ficha({ ...caliente, tipoEmpleo: "Autónomo" })).nivel).toBe("tibio");
+  });
+  it("frío: destina menos de 300 € (≈ 1 millón de pesos) o gana menos de 1.300 €", () => {
+    expect(puntuarLead(ficha({ ...caliente, capacidadMensual: "150 euros" })).nivel).toBe("frio");
+    expect(puntuarLead(ficha({ ...caliente, capacidadMensual: "800.000" })).nivel).toBe("frio");
+    expect(puntuarLead(ficha({ ...caliente, ingresosMensuales: "1200 euros" })).nivel).toBe("frio");
+  });
+  it("compra con otra persona: se suman los ingresos de las dos personas", () => {
+    const sola = { tipoEmpleo: "Empleado", ingresosMensuales: "900 euros", capacidadMensual: "450 euros", reportadoDatacredito: "No" };
+    expect(puntuarLead(ficha(sola)).nivel).toBe("frio");
+    expect(puntuarLead(ficha({ ...sola, compraSoloOAcompanado: "Con mi esposo", ingresosCoComprador: "1000 euros" })).nivel).toBe("caliente");
+  });
+  it("reportado en Datacrédito: nunca caliente; si no puede ponerse al día es frío, si lo hará pronto es tibio", () => {
+    expect(puntuarLead(ficha({ ...caliente, reportadoDatacredito: "Sí" })).nivel).toBe("tibio");
+    expect(puntuarLead(ficha({ ...caliente, reportadoDatacredito: "Sí", puedeQuitarReporte: "No, es una deuda grande" })).nivel).toBe("frio");
+    expect(puntuarLead(ficha({ ...caliente, reportadoDatacredito: "Sí", puedeQuitarReporte: "Sí, lo pago pronto" })).nivel).toBe("tibio");
+  });
+  it("quien tiene ahorros no queda frío por cuota baja (regla de ahorros)", () => {
+    const c = evaluarCalificacion({ ...caliente, ahorroDisponible: "3.000.000 COP", capacidadMensual: "800.000 COP" });
+    expect(c.nivel).toBe("tibio");
+    expect(c.motivo).toContain("ahorros");
+    expect(evaluarCalificacion({ ...caliente, ahorroDisponible: "no tengo", capacidadMensual: "800.000 COP" }).nivel).toBe("frio");
+  });
+  it("ingresos de 2.000 € o más = caliente aunque destine solo 800.000 COP al mes (regla de ingresos altos)", () => {
+    const c = evaluarCalificacion({ ciudadResidencia: "España", ciudadCompra: "Ibagué", entregaInmediataOFutura: "Futuro", ahorroDisponible: "3.000.000 COP", capacidadMensual: "800.000 COP", tipoEmpleo: "Empleada", ingresosMensuales: "2.300€ a 2.500€", compraSoloOAcompanado: "Con su pareja" });
+    expect(c.nivel).toBe("caliente");
+    expect(c.motivo).toContain("2.000");
+  });
+  it("con 2.000 € de ingresos, reportado queda tibio y reportado sin plan sigue frío", () => {
+    expect(evaluarCalificacion({ ...caliente, ingresosMensuales: "2500 euros", capacidadMensual: "200 euros", reportadoDatacredito: "Sí", puedeQuitarReporte: "Sí, pronto" }).nivel).toBe("tibio");
+    expect(evaluarCalificacion({ ...caliente, ingresosMensuales: "2500 euros", reportadoDatacredito: "Sí", puedeQuitarReporte: "No" }).nivel).toBe("frio");
+  });
+  it("con ahorros, reportado sin plan de ponerse al día sigue siendo frío", () => {
+    expect(evaluarCalificacion({ ...caliente, ahorroDisponible: "5000 euros", reportadoDatacredito: "Sí", puedeQuitarReporte: "No" }).nivel).toBe("frio");
+  });
+  it("compra de contado o ahorros de 30.000 € o más = caliente (caso Luz Adriana, 250 millones COP)", () => {
+    expect(evaluarCalificacion({ ciudadCompra: "Cali", ahorroDisponible: "250.000.000 COP, de contado" }).nivel).toBe("caliente");
+    expect(evaluarCalificacion({ ciudadCompra: "Cali", ahorroDisponible: "40.000 euros" }).nivel).toBe("caliente");
+    expect(evaluarCalificacion({ ciudadCompra: "Cali", ahorroDisponible: "40.000 euros", reportadoDatacredito: "Sí", puedeQuitarReporte: "No" }).nivel).toBe("frio");
+  });
+  it("evaluarCalificacion dice qué preguntas faltan", () => {
+    const c = evaluarCalificacion({ ...caliente });
+    // Guion definitivo (9 nov 2026): Datacrédito y «compra sola o acompañada» ya no son preguntas del guion.
+    expect(c.faltan).not.toContain("compraSoloOAcompanado");
+    expect(c.faltan).not.toContain("reportadoDatacredito");
+    expect(evaluarCalificacion({ ciudadCompra: "Cali" }).completo).toBe(false);
+    expect(evaluarCalificacion({ ciudadCompra: "Cali" }).faltan).toContain("ingresosMensuales");
+  });
+});
+
 describe("puntuarLead", () => {
   it("ahorro alto, cuota y entrega inmediata = caliente", () => {
     const p = puntuarLead({
       telefono: "+34600000001",
       notas: "Hora de llamada pedida: 18:00",
-      metadata: { ahorroDisponible: "20 mil euros", capacidadMensual: "1000", tipoEmpleo: "contrato indefinido", entregaInmediataOFutura: "ahora", ciudadResidencia: "a", ciudadCompra: "b" },
+      metadata: { ahorroDisponible: "20 mil euros", ingresosMensuales: "2000", capacidadMensual: "1000", tipoEmpleo: "contrato indefinido", entregaInmediataOFutura: "ahora", ciudadResidencia: "a", ciudadCompra: "b" },
     });
     expect(p.nivel).toBe("caliente");
   });
@@ -108,7 +174,7 @@ describe("runResumenDia", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "Bekai Colombia", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
     fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
     const now = Date.UTC(2026, 9, 20, 6, 30); // 08:30 en Madrid
@@ -118,6 +184,17 @@ describe("runResumenDia", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
   const A_LAS_8 = Date.UTC(2026, 9, 20, 6, 30);
+
+  it("lineaLlamadas cuenta las llamadas del bot y las que pasaron por comodín", async () => {
+    const now = A_LAS_8;
+    await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, metadata, status, created_at, updated_at) VALUES ('c1',?,?,?,?,?,?,?,?)",
+      [conv.id, "Ana", "", "Cita · Videollamada · 2026-10-22 11:00", JSON.stringify({ estado: "Reservada (Cal.com)" }), "new", now - 1000, now - 1000]);
+    await db.run("INSERT INTO tickets (id, conversation_id, category, summary, transcript, status, created_at) VALUES ('t1',?,?,?,?,?,?)",
+      [conv.id, "otro", "Cliente pide otro horario para la llamada", "", "open", now - 2000]);
+    const t = await lineaLlamadas(db, now);
+    expect(t).toContain("el bot agendó 1 (pasó a la asesora por otro horario: 1)");
+    expect(t).toContain("7 días: 1 agendadas, 1 por comodín");
+  });
 
   it("manda el resumen y el CSV a los dos, una sola vez al día", async () => {
     const r = await runResumenDia(env, A_LAS_8);
@@ -165,7 +242,7 @@ describe("registro por el equipo", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1", BUSINESS_NAME: "la empresa", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1", BUSINESS_NAME: "Bekai Colombia", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
     for (const [id, user, name] of [["ycloud:34600000001", "34600000001", "Ana López Ruiz"], ["ycloud:34600000002", "34600000002", "Ana Gómez"], ["ycloud:34600000003", "34600000003", "Luis Pérez"]]) {
       await db.run("INSERT INTO conversations (id, channel, channel_user_id, display_name, started_at, last_message_at) VALUES (?,?,?,?,?,?)", [id, "ycloud", user, name, NOW - 5000, NOW - 5000]);
       await db.run("INSERT INTO leads (id, conversation_id, name, contact, intent, notes, metadata, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -253,7 +330,7 @@ describe("Excel de clientes listos (6:00 y 14:00)", () => {
     const mf = await createTestMiniflare();
     const d1 = (await mf.getD1Database("DB")) as any;
     db = new Db(d1);
-    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "la empresa", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
+    env = { DB: d1, TELEGRAM_BOT_TOKEN: "T", EQUIPO_TELEGRAM_CHAT_ID: "1,2", BUSINESS_NAME: "Bekai Colombia", BOT_TIMEZONE: "Europe/Madrid" } as unknown as Env;
     fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
     await db.run("INSERT INTO settings (key, value, updated_at) VALUES ('bot_form_url','https://forms.example/f',1)");
@@ -301,9 +378,9 @@ describe("Excel de clientes listos (6:00 y 14:00)", () => {
 
 describe("correo inventado", () => {
   it("sin correo se inventa uno con el nombre, en un dominio que no existe, y queda marcado", () => {
-    const [l] = armarLeads([conv], [lead({ name: "María José Pérez", contact: "" })]);
+    const [l] = armarLeads([conv], [lead({ name: "Ana Torres", contact: "" })]);
     const r = correoParaFormulario(l);
-    expect(r).toEqual({ correo: "maria.jose.perez@correo-no-proporcionado.invalid", inventado: true });
+    expect(r).toEqual({ correo: "ana.torres@correo-no-proporcionado.invalid", inventado: true });
   });
   it("con correo real no se toca", () => {
     const [l] = armarLeads([conv], [lead()]);
@@ -318,5 +395,18 @@ describe("correo inventado", () => {
   it("sin correo el cliente igual entra al Excel de listos (el teléfono y las ciudades sí son obligatorios)", () => {
     const [l] = armarLeads([conv], [lead({ contact: "", metadata: JSON.stringify({ ciudadResidencia: "España, Girona", ciudadCompra: "Cali" }) })]);
     expect(faltantes(l)).toEqual([]);
+  });
+});
+
+describe("horaDeLlamadaPedida", () => {
+  it("«no indicada» no cuenta como pedir hora; una hora real sí", async () => {
+    const { horaDeLlamadaPedida, puntuarLead } = await import("../../src/followup/resumenDia");
+    expect(horaDeLlamadaPedida("Origen: x. Hora de llamada pedida: no indicada. Teléfono sin indicativo")).toBe("");
+    expect(horaDeLlamadaPedida("Hora de llamada pedida: 18:00 hora de España")).toBe("Hora de llamada pedida: 18:00 hora de España");
+    expect(horaDeLlamadaPedida("sin nada")).toBe("");
+    const sin = puntuarLead({ metadata: {}, notas: "Hora de llamada pedida: no indicada", telefono: "640961054" } as any);
+    expect(sin.puntos).toBe(1);
+    const con = puntuarLead({ metadata: {}, notas: "Hora de llamada pedida: mañana 5pm", telefono: "640961054" } as any);
+    expect(con.puntos).toBe(2);
   });
 });

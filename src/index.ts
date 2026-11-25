@@ -40,6 +40,7 @@ import { salesVariantFor } from "./tools/masterclass";
 import { costOfUsage } from "./pricing";
 import { tokensMatch } from "./http-auth";
 import { apiApp } from "./api";
+import { crmApp } from "../member/crm-app.local";
 import { persistSelfOrigin } from "./lib/self-origin";
 
 export { SupportAgent } from "./agent";
@@ -244,6 +245,13 @@ async function ingestOne(env: Env, msg: IncomingMessage): Promise<boolean> {
     if (marcado && msg.providerMessageId) {
       const { olvidarMensaje } = await import("./db/dedup");
       await olvidarMensaje(new Db(env.DB), msg.providerMessageId);
+    }
+    // Queda constancia en la Auditoría del CRM (el registro nunca debe agravar el fallo).
+    try {
+      const { registrarHallazgo } = await import("./followup/auditor");
+      await registrarHallazgo(env, { tipo: "entrega_al_agente", convId: `${msg.channel}:${msg.channelUserId}`, clave: msg.providerMessageId ?? String(Date.now()), detalle: `Un mensaje de ${msg.channel} no pudo entregarse al bot: el proveedor lo reenviará.` });
+    } catch {
+      /* sin registro */
     }
     return false;
   }
@@ -636,6 +644,8 @@ app.get("/equipo", async (c) => {
 app.get("/admin/", (c) => c.redirect("/admin/overview"));
 
 // Admin dashboard — Basic Auth guarded sub-app mounted at /admin/*.
+// CRM de Verónica: aplicación propia (su acceso, su diseño), independiente del panel. Sin CRM_SESSION_SECRET no abre (responde 503).
+app.route("/crm", crmApp());
 app.route("/admin", adminApp);
 
 // Control-plane API — Bearer-guarded (CONTROL_PLANE_TOKEN) read-only sub-app
