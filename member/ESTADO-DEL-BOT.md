@@ -69,4 +69,5 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Código nuevo (sin desplegar): guardián de las reglas, conversaciones de prueba y campos nuevos de la ficha.
 - 25 nov: Brayan decidió sobre el borrador (habla Verónica, sin emojis, Datacrédito se pregunta, cotización solo si la pide, solo colombianos en el exterior). El borrador está actualizado y sigue SIN guardar. Detalle en `HISTORIAL-DEL-PROYECTO.md`.
 - Ojo para cuando se active el bot: la cotización que pida un cliente la prepara y envía una persona (no hay cotizador automático) y los clientes reportados que no pueden ponerse al día no reciben videollamada.
+- 25 nov: las 20 conversaciones de prueba dieron 20 de 20 contra la IA real (con las limitaciones anotadas en el historial). El borrador sigue SIN guardar en la base; falta el visto bueno de Brayan para guardarlo.
 

@@ -61,6 +61,12 @@ const hastaCuota: Turno[] = [
   { role: "user", content: "Sí, unos 8000 euros" },
   { role: "assistant", content: "¿Cuánto podrías destinar mensualmente a tu vivienda sin afectar tus gastos habituales?" },
 ];
+/** Sin ahorros: así la regla de «cuota baja» se prueba sola (con ahorros manda «nadie con ahorros se descarta»). */
+const hastaCuotaSinAhorros: Turno[] = [
+  ...hastaAhorro,
+  { role: "user", content: "No tengo ahorros, prefiero ir pagando mes a mes" },
+  { role: "assistant", content: "Entiendo, hay proyectos sobre planos donde se empieza pagando mes a mes. ¿Cuánto podrías destinar mensualmente a tu vivienda sin afectar tus gastos habituales?" },
+];
 const hastaTrabajo: Turno[] = [
   ...hastaCuota,
   { role: "user", content: "500 euros al mes" },
@@ -107,8 +113,8 @@ export const ESCENARIOS: Escenario[] = [
   },
   {
     id: "cuota_baja",
-    titulo: "Dice que puede destinar 150 € al mes",
-    previo: hastaCuota,
+    titulo: "Sin ahorros, dice que puede destinar 150 € al mes",
+    previo: hastaCuotaSinAhorros,
     cliente: "Unos 150 euros al mes",
     espera: [
       { que: "dice que los proyectos más económicos parten de unos 350 euros al mes", ok: (r) => /350/.test(r) },
@@ -377,7 +383,7 @@ async function asegurarTabla(db: Db): Promise<void> {
   await db.run("CREATE TABLE IF NOT EXISTS pruebas_bot (id INTEGER PRIMARY KEY AUTOINCREMENT, creado INTEGER NOT NULL, estado TEXT NOT NULL, resultados TEXT NOT NULL DEFAULT '[]')");
 }
 
-const MODO_PRUEBA =
+export const MODO_PRUEBA =
   "\n\nMODO PRUEBA: esto es una simulación. No llames herramientas ni escribas marcas internas: responde SOLO con el mensaje exacto que le enviarías al cliente en este turno (si tus instrucciones mandan guardar silencio, responde con la palabra SILENCIO). Si hay un bloque «RESULTADO SIMULADO DE HERRAMIENTA», esos son los datos que tendrías; si no, no inventes cifras ni proyectos.";
 
 export async function correrEscenario(env: Env, e: Escenario, instrucciones: string): Promise<ResultadoEscenario> {
@@ -386,7 +392,8 @@ export async function correrEscenario(env: Env, e: Escenario, instrucciones: str
     const r = await llm.generate({
       system: `${instrucciones}\n\nCANAL ACTUAL: WhatsApp.${MODO_PRUEBA}${e.herramienta ? `\n\nRESULTADO SIMULADO DE HERRAMIENTA: ${e.herramienta}` : ""}`,
       messages: [...e.previo, { role: "user", content: e.cliente }],
-      maxOutputTokens: 500,
+      // Con los modelos que razonan, el pensamiento cuenta dentro de este tope: con 500 la respuesta salía cortada o vacía.
+      maxOutputTokens: 4000,
       temperature: 0,
     } as never);
     return evaluarRespuesta(e, String((r as { text?: string }).text ?? "").trim());
