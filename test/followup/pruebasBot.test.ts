@@ -26,7 +26,7 @@ beforeEach(async () => {
 
 describe("escenarios de prueba", () => {
   it("hay escenarios con ids únicos", () => {
-    expect(ESCENARIOS.length).toBeGreaterThanOrEqual(12);
+    expect(ESCENARIOS.length).toBeGreaterThanOrEqual(20);
     expect(new Set(ESCENARIOS.map((e) => e.id)).size).toBe(ESCENARIOS.length);
   });
 

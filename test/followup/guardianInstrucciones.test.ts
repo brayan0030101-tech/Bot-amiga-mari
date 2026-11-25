@@ -90,4 +90,15 @@ describe("el borrador de reglas de Verónica", () => {
     expect(texto).toContain("NUNCA niegues ser un asistente virtual");
     expect(texto).not.toMatch(/\[\[botones/);
   });
+
+  it("sigue las decisiones del dueño: habla Verónica en primera persona, sin emojis, Datacrédito se pregunta y la cotización solo si la pide", async () => {
+    const { readFileSync } = await import("node:fs");
+    const texto = readFileSync("member/reglas-del-bot.borrador.txt", "utf8");
+    expect(texto).not.toMatch(/\p{Extended_Pictographic}/u);
+    expect(texto).toContain("Soy Verónica, de Bekai Colombia");
+    expect(texto).not.toContain("equipo comercial de Verónica Rivera");
+    expect(texto).toContain("la pregunta del guion es obligatoria");
+    expect(texto).toContain("COTIZACION: SOLO SI EL CLIENTE LA PIDE");
+    expect(texto).toContain("solo atendemos a colombianos que viven en el exterior");
+  });
 });

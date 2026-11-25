@@ -51,3 +51,16 @@ Traído del bot de referencia y adaptado a Zernio (WhatsApp de Verónica). Nada 
 - Pruebas: 1.605 pasan (antes de este paso: 1.561), sin errores de tipos, cero menciones de otros negocios.
 - **NO verificado**: el borrador no se ha probado con el modelo real (no hay llave de IA en esta sesión). Las 14 conversaciones de prueba hay que correrlas contra la IA antes de guardarlo (≈ 0,40 USD).
 - **Pendiente de aprobar por Brayan** (la lista de decisiones está en el mensaje del 23 nov): tono y emojis, nombre del bot, umbrales de ingresos/cuota, qué hacer sin catálogo, Datacrédito, país de los clientes. Después: correr las pruebas → guardar en la base (`custom_instructions`) → (con permiso) desplegar el guardián.
+
+## 25 de noviembre de 2026 — decisiones de Brayan sobre el borrador de las reglas (aún SIN guardar, SIN desplegar)
+Decisiones: (1) sin emojis; (2) **habla Verónica** (primera persona, «Soy Verónica, de Bekai Colombia»); (3) los mismos umbrales de la otra asesora (350 € de cuota baja, 1.300 € de ingresos bajos, 2.000 € de cliente caliente); (4) la cotización **solo se envía cuando el cliente la pide**; (5) **sí se pregunta por Datacrédito** porque los clientes reportados que no pueden ponerse al día no califican; (6) solo se atiende a **colombianos que viven en el exterior**; (7) moneda: como estaba propuesto.
+Cambios en el borrador (`member/reglas-del-bot.borrador.txt`, ≈ 26.000 caracteres):
+- Voz de Verónica en primera persona y singular en todo el texto. Se conserva la honestidad: si el cliente pregunta de verdad si habla con una persona o un bot, responde «Soy el asistente virtual de Verónica…», y nunca dice ni insinúa que es una persona.
+- Datacrédito entra en el guion (pregunta 9, justo tras trabajo e ingresos): «No está seguro/a» no cuenta como reportado; si está reportado se pregunta si puede ponerse al día; si no puede, no se ofrece videollamada y se despide con la puerta abierta («cuando puedas ponerte al día, escríbeme»). Esta regla manda sobre «nadie con ahorros se descarta» y se añade a los datos obligatorios.
+- Cotización: nunca se ofrece por iniciativa propia; si el cliente la pide, el bot anota «Pidió cotización», abre un aviso interno (`handoffHuman`, motivo «Cliente pide cotización») y le dice que se la prepara y se la envía por el mismo chat. **Hoy no hay cotizador automático: la cotización la tiene que preparar y enviar una persona** (queda ligado a la pregunta pendiente de si Verónica usa el mismo ViveHome).
+- Colombianos en el exterior: si dice que vive en Colombia o que no es colombiano, se le explica con amabilidad y no se sigue; se anota en la ficha.
+- Guardián: 17 reglas imprescindibles (se añadieron cotización, reportados y colombianos, y se renombró la de agendar primero).
+- Conversaciones de prueba: 21 escenarios (se añadieron primer mensaje sin emojis, pregunta de Datacrédito, reportado sin plan, reportado con plan, pide cotización, no colombiano); el costo de una corrida pasa a ≈ 0,55 USD.
+- Pruebas: 1.618 pasan, sin errores de tipos, cero menciones de otros negocios.
+- NO verificado: el borrador sigue sin probarse con el modelo real (no hay llave de IA en la sesión).
+

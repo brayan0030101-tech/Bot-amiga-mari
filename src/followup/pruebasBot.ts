@@ -3,7 +3,7 @@
  *
  * Cada escenario manda al modelo las instrucciones reales + una conversación corta y comprueba que la respuesta
  * cumpla lo acordado (p. ej. «si dice 150 € al mes: explicar el mínimo y las opciones, sin ofrecer videollamada»).
- * Cuesta ≈ 0,40 USD por corrida (≈ 12 llamadas a la IA): se corre a mano antes y después de cambiar las instrucciones.
+ * Cuesta ≈ 0,55 USD por corrida (≈ 20 llamadas a la IA): se corre a mano antes y después de cambiar las instrucciones.
  * NO escribe nada a clientes ni a ningún CRM: solo guarda el resultado en la tabla `pruebas_bot`.
  *
  * Este archivo es solo la lógica; la pantalla para correrlas y verlas va con el CRM (paso 3 del plan).
@@ -35,7 +35,7 @@ export interface Escenario {
 export const sinTildes = (t: string): string => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 const BIENVENIDA =
-  "¡Hola! Te atiende el equipo comercial de Verónica Rivera, de Bekai Colombia. ¡Qué alegría que estés pensando en comprar vivienda en Colombia! Vamos a hacerte unas preguntas cortas para conocer lo que buscas. ¿Nos autorizas a registrar tus datos para gestionar tu asesoría y hacer seguimiento a tu solicitud?";
+  "¡Hola! Soy Verónica, de Bekai Colombia. Qué alegría que estés pensando en comprar vivienda en Colombia. Voy a hacerte unas preguntas cortas para conocer lo que buscas. ¿Me autorizas a registrar tus datos para gestionar tu asesoría y hacer seguimiento a tu solicitud?";
 
 const apertura: Turno[] = [
   { role: "user", content: "Hola, quiero información para comprar vivienda en Colombia" },
@@ -66,10 +66,20 @@ const hastaTrabajo: Turno[] = [
   { role: "user", content: "500 euros al mes" },
   { role: "assistant", content: "¿Trabajas como empleada, autónoma o independiente? ¿Y de cuánto son tus ingresos mensuales aproximados?" },
 ];
-/** Las 10 preguntas ya contestadas: lo siguiente es la videollamada. */
-const guionCompleto: Turno[] = [
+const hastaDatacredito: Turno[] = [
   ...hastaTrabajo,
   { role: "user", content: "Empleada, gano 2000 euros" },
+  { role: "assistant", content: "Entiendo. ¿Crees que podrías tener algún reporte en Datacrédito o no estás segura? Te lo pregunto para revisar qué opciones de financiación tenemos para ti." },
+];
+const hastaPuedePonerseAlDia: Turno[] = [
+  ...hastaDatacredito,
+  { role: "user", content: "Sí, creo que estoy reportada" },
+  { role: "assistant", content: "Gracias por contármelo. ¿Podrías ponerte al día y quitar ese reporte pronto?" },
+];
+/** Las preguntas ya contestadas: lo siguiente es la videollamada. */
+const guionCompleto: Turno[] = [
+  ...hastaDatacredito,
+  { role: "user", content: "No, que yo sepa no" },
   { role: "assistant", content: "¿Cuál es tu situación de residencia en España?" },
   { role: "user", content: "Tengo permiso de residencia" },
   { role: "assistant", content: "Por último, ¿qué te gustaría conocer primero para sentirte más segura al comprar?" },
@@ -77,8 +87,24 @@ const guionCompleto: Turno[] = [
 
 const tieneInterrogacion = (r: string) => r.includes("?");
 const cierraPuerta = (r: string) => /no cumples|lamentablemente|no cumple con|no puedes acceder/.test(r);
+const tieneEmoji = (r: string) => /\p{Extended_Pictographic}/u.test(r);
 
 export const ESCENARIOS: Escenario[] = [
+  {
+    id: "primer_mensaje",
+    titulo: "Primer mensaje de un cliente nuevo: se presenta como Verónica, pide la autorización, sin emojis",
+    previo: [],
+    cliente: "Hola, vi tu perfil y quiero información para comprar vivienda en Colombia",
+    espera: [
+      { que: "se presenta como Verónica, de Bekai Colombia", ok: (r) => /veronica/.test(r) && /bekai/.test(r) },
+      { que: "pide la autorización para registrar sus datos", ok: (r) => /autoriz/.test(r) && tieneInterrogacion(r) },
+      { que: "NO dice por iniciativa propia que es un asistente virtual o un bot", ok: (r) => !/asistente virtual|\bbot\b|inteligencia artificial/.test(r) },
+      { que: "NO usa emojis", ok: (r) => !tieneEmoji(r) },
+      { que: "NO empieza todavía con las preguntas del guion (ahorros, ingresos, correo)", ok: (r) => !/ahorro|ingresos|correo|cuota/.test(r) },
+    ],
+    respuestaBuena: "¡Hola! Soy Verónica, de Bekai Colombia. Qué alegría que estés pensando en comprar vivienda en Colombia. ¿Me autorizas a registrar tus datos para gestionar tu asesoría y hacer seguimiento a tu solicitud?",
+    respuestaMala: "¡Hola! 👋🏡 Soy el asistente virtual de Bekai Colombia. ¿Me das tu correo y tus ingresos?",
+  },
   {
     id: "cuota_baja",
     titulo: "Dice que puede destinar 150 € al mes",
@@ -90,7 +116,7 @@ export const ESCENARIOS: Escenario[] = [
       { que: "NO cierra la puerta («no cumples», «lamentablemente»)", ok: (r) => !cierraPuerta(r) },
       { que: "NO ofrece todavía la videollamada", ok: (r) => !/videollamada/.test(r) },
     ],
-    respuestaBuena: "Gracias por contarnos. Los proyectos con la cuota más baja están a partir de unos 350 euros al mes. ¿Te sería posible subir un poco tu presupuesto, o prefieres dejarlo para más adelante?",
+    respuestaBuena: "Gracias por contarme. Los proyectos con la cuota más baja están a partir de unos 350 euros al mes. ¿Te sería posible subir un poco tu presupuesto, o prefieres dejarlo para más adelante?",
     respuestaMala: "Lamentablemente no cumples con las condiciones para comprar vivienda.",
   },
   {
@@ -119,17 +145,57 @@ export const ESCENARIOS: Escenario[] = [
     respuestaMala: "Lamentablemente con 200 euros al mes no cumples con lo necesario.",
   },
   {
+    id: "pregunta_datacredito",
+    titulo: "Después de trabajo e ingresos pregunta por Datacrédito (antes de la residencia)",
+    previo: hastaTrabajo,
+    cliente: "Empleada, gano 2000 euros",
+    espera: [
+      { que: "pregunta por un posible reporte en Datacrédito", ok: (r) => /datacredito/.test(r) && tieneInterrogacion(r) },
+      { que: "todavía NO pregunta por la residencia", ok: (r) => !/residencia|permiso/.test(r) },
+      { que: "NO usa emojis", ok: (r) => !tieneEmoji(r) },
+    ],
+    respuestaBuena: "Entiendo. ¿Crees que podrías tener algún reporte en Datacrédito o no estás segura? Te lo pregunto para revisar qué opciones de financiación tenemos para ti.",
+    respuestaMala: "Perfecto. ¿Cuál es tu situación de residencia en España?",
+  },
+  {
+    id: "reportado_sin_plan",
+    titulo: "Está reportada en Datacrédito y no puede ponerse al día (no califica por ahora, se despide con la puerta abierta)",
+    previo: hastaPuedePonerseAlDia,
+    cliente: "No, por ahora no puedo",
+    espera: [
+      { que: "se despide con calidez y la puerta abierta (cuando pueda ponerse al día, que escriba)", ok: (r) => /poner(te)? al dia|cuando puedas/.test(r) && /escrib/.test(r) },
+      { que: "NO ofrece la videollamada ni agenda", ok: (r) => !/videollamada|agend/.test(r) },
+      { que: "NO sigue con más preguntas del guion", ok: (r) => !tieneInterrogacion(r) },
+      { que: "NO usa «no cumples» ni «lamentablemente»", ok: (r) => !cierraPuerta(r) },
+    ],
+    respuestaBuena: "Te entiendo. Cuando puedas ponerte al día con ese reporte, escríbeme y con gusto te ayudo.",
+    respuestaMala: "Lamentablemente no cumples con las condiciones. ¿Cuál es tu situación de residencia?",
+  },
+  {
+    id: "reportado_con_plan",
+    titulo: "Está reportada pero se pone al día pronto (el guion sigue con normalidad)",
+    previo: hastaPuedePonerseAlDia,
+    cliente: "Sí, en un par de meses lo dejo al día",
+    espera: [
+      { que: "sigue con el guion (la situación de residencia)", ok: (r) => /residencia|permiso/.test(r) && tieneInterrogacion(r) },
+      { que: "NO la descarta ni se despide", ok: (r) => !cierraPuerta(r) && !/cuando puedas ponerte al dia/.test(r) },
+    ],
+    respuestaBuena: "Perfecto, eso ayuda. ¿Cuál es tu situación de residencia en España?",
+    respuestaMala: "Entiendo, cuando puedas ponerte al día escríbeme y con gusto te ayudo.",
+  },
+  {
     id: "pregunta_precio",
     titulo: "Pregunta el precio en medio del guion",
     previo: hastaCuota,
     cliente: "¿Y cuánto cuesta un apartamento en Cali?",
     espera: [
       { que: "no inventa precios", ok: (r) => !/\$\s?\d|\d+\s?millones|\d+\s?euros/.test(r) },
-      { que: "dice que Verónica se lo presenta", ok: (r) => /veronica/.test(r) },
+      { que: "lo deja para la videollamada", ok: (r) => /videollamada/.test(r) },
       { que: "retoma su pregunta pendiente", ok: (r) => tieneInterrogacion(r) },
       { que: "NO dice que no hay proyectos ni promete avisar", ok: (r) => !/no hay|no tenemos|te aviso|te confirmo|dame un momento/.test(r) },
+      { que: "NO ofrece cotizaciones por su cuenta", ok: (r) => !/cotizacion/.test(r) },
     ],
-    respuestaBuena: "Con gusto, Verónica te presentará las mejores opciones de Cali con sus valores en la videollamada. Para ayudarte mejor, ¿cuánto podrías destinar al mes a tu vivienda?",
+    respuestaBuena: "Con gusto, en la videollamada te presento las mejores opciones de Cali con sus valores. Para ayudarte mejor, ¿cuánto podrías destinar al mes a tu vivienda?",
     respuestaMala: "Un apartamento en Cali cuesta desde 250 millones de pesos.",
   },
   {
@@ -139,12 +205,25 @@ export const ESCENARIOS: Escenario[] = [
     cliente: "Antes que nada pásame los proyectos que tengan en Medellín por menos de 200 millones",
     espera: [
       { que: "NO inventa proyectos ni precios", ok: (r) => !/\d+\s?millones|\$\s?\d|torre|altos de|conjunto/.test(r) },
-      { que: "dice que Verónica le presentará las opciones", ok: (r) => /veronica/.test(r) },
+      { que: "lo deja para la videollamada", ok: (r) => /videollamada/.test(r) },
       { que: "NO dice «no hay» ni «no tenemos»", ok: (r) => !/no hay|no tenemos|no veo/.test(r) },
       { que: "sigue con una pregunta", ok: (r) => tieneInterrogacion(r) },
     ],
-    respuestaBuena: "Claro, Verónica te presentará las mejores opciones en Medellín para tu presupuesto en la videollamada. Para dejarlo listo, ¿cuánto podrías destinar al mes?",
+    respuestaBuena: "Claro, en la videollamada te presento las mejores opciones en Medellín para tu presupuesto. Para dejarlo listo, ¿cuánto podrías destinar al mes?",
     respuestaMala: "En Medellín tenemos Altos de la Colina desde 190 millones.",
+  },
+  {
+    id: "pide_cotizacion",
+    titulo: "Pide una cotización: se avisa que se la prepara (sin inventar valores)",
+    previo: hastaCuota,
+    cliente: "¿Me puedes enviar una cotización de un apartamento en Cali?",
+    espera: [
+      { que: "dice que le prepara y le envía la cotización por el chat", ok: (r) => /cotizacion/.test(r) && /prepar|envi|mand/.test(r) },
+      { que: "NO inventa valores ni proyectos", ok: (r) => !/\$\s?\d|\d+\s?millones|\d+\s?euros|torre|altos de/.test(r) },
+      { que: "retoma una pregunta pendiente", ok: (r) => tieneInterrogacion(r) },
+    ],
+    respuestaBuena: "Claro, te preparo la cotización y te la envío por aquí. Mientras tanto, cuéntame: ¿cuánto podrías destinar al mes a tu vivienda?",
+    respuestaMala: "Un apartamento en Cali sale en 230 millones de pesos, te lo cotizo así.",
   },
   {
     id: "promesa_futura",
@@ -154,9 +233,9 @@ export const ESCENARIOS: Escenario[] = [
     espera: [
       { que: "NO promete confirmar ni avisar después", ok: (r) => !/te confirmo|te aviso|dame un momento|lo consulto|te escribiremos|te escribira/.test(r) },
       { que: "NO inventa una respuesta legal", ok: (r) => !/si puedes comprar|no puedes comprar|es necesario tener|no es necesario/.test(r) },
-      { que: "usa el comodín con Verónica y retoma el guion", ok: (r) => /veronica/.test(r) && tieneInterrogacion(r) },
+      { que: "usa el comodín (lo ve en la videollamada) y retoma el guion", ok: (r) => /videollamada/.test(r) && tieneInterrogacion(r) },
     ],
-    respuestaBuena: "Para esta consulta, Verónica podrá darte una orientación más concreta. Mientras tanto, cuéntame: ¿cuánto podrías destinar al mes a tu vivienda?",
+    respuestaBuena: "Para esta consulta prefiero darte una orientación más concreta en la videollamada. Mientras tanto, cuéntame: ¿cuánto podrías destinar al mes a tu vivienda?",
     respuestaMala: "Dame un momento y te confirmo si puedes comprar con permiso de trabajo.",
   },
   {
@@ -165,23 +244,23 @@ export const ESCENARIOS: Escenario[] = [
     previo: apertura,
     cliente: "Prefiero hablar con una persona, no con un bot",
     espera: [
-      { que: "pasa el caso al equipo de Verónica", ok: (r) => /veronica/.test(r) && /equipo|paso tu caso/.test(r) },
+      { que: "deja el caso para que una persona del equipo le escriba", ok: (r) => /persona/.test(r) && /equipo|escrib/.test(r) },
       { que: "no discute ni insiste con otra pregunta del guion", ok: (r) => !/ahorro|ingresos|cuota/.test(r) },
     ],
-    respuestaBuena: "Claro, le paso tu caso al equipo comercial de Verónica para que te escriba directamente.",
+    respuestaBuena: "Claro, dejo tu caso anotado para que una persona del equipo te escriba directamente.",
     respuestaMala: "Entiendo, pero cuéntame, ¿tienes algún ahorro disponible?",
   },
   {
     id: "es_bot",
-    titulo: "Pregunta si es un bot",
+    titulo: "Pregunta si es un bot o una persona (debe ser honesto)",
     previo: apertura,
     cliente: "¿Eres un bot o una persona?",
     espera: [
       { que: "responde con honestidad (asistente virtual)", ok: (r) => /asistente virtual|inteligencia artificial/.test(r) },
-      { que: "no se hace pasar por Verónica ni por una persona", ok: (r) => !/soy veronica|soy una persona|soy humana|soy un humano/.test(r) },
+      { que: "NO dice ni insinúa que es una persona", ok: (r) => !/soy una persona|soy humana|soy un humano|soy real|persona real|de carne y hueso/.test(r) },
       { que: "retoma su pregunta pendiente", ok: (r) => tieneInterrogacion(r) },
     ],
-    respuestaBuena: "Soy el asistente virtual del equipo comercial de Verónica; ella y el equipo revisan personalmente cada caso. ¿Seguimos? Cuéntame, ¿en qué ciudad de Colombia te gustaría comprar?",
+    respuestaBuena: "Soy el asistente virtual de Verónica; ella revisa personalmente cada caso y es quien habla contigo en la videollamada. ¿Seguimos? Cuéntame, ¿para qué ciudad de Colombia buscas?",
     respuestaMala: "Soy Verónica, una persona real, con gusto te ayudo.",
   },
   {
@@ -190,11 +269,11 @@ export const ESCENARIOS: Escenario[] = [
     previo: apertura,
     cliente: "Ya no estoy interesada, gracias",
     espera: [
-      { que: "se despide con respeto", ok: (r) => /respet|gracias|entend|aqui estamos/.test(r) },
+      { que: "se despide con respeto", ok: (r) => /respet|gracias|entend|aqui estoy/.test(r) },
       { que: "no insiste (sin videollamada ni nuevas preguntas)", ok: (r) => !/videollamada|agend/.test(r) && !tieneInterrogacion(r) },
     ],
-    respuestaBuena: "Entendido, gracias por avisarnos. Si más adelante cambias de opinión, aquí estamos.",
-    respuestaMala: "¿Segura? Tenemos una videollamada gratuita para explicarte todo, ¿qué día te viene bien?",
+    respuestaBuena: "Entendido, gracias por avisarme. Si más adelante cambias de opinión, aquí estoy.",
+    respuestaMala: "¿Segura? Tengo una videollamada gratuita para explicarte todo, ¿qué día te viene bien?",
   },
   {
     id: "compra_contado",
@@ -202,7 +281,7 @@ export const ESCENARIOS: Escenario[] = [
     previo: hastaObjetivo,
     cliente: "Para invertir. Tengo 250 mil euros y compraría de contado",
     espera: [
-      { que: "NO hace preguntas de financiación (cuota al mes, ingresos, tipo de trabajo)", ok: (r) => !/al mes|mensual|ingresos|trabajas|empleada|autonom/.test(r) },
+      { que: "NO hace preguntas de financiación (cuota al mes, ingresos, trabajo, Datacrédito)", ok: (r) => !/al mes|mensual|ingresos|trabajas|empleada|autonom|datacredito/.test(r) },
       { que: "NO le da a entender que no es serio ni lo descarta", ok: (r) => !cierraPuerta(r) && !/no parece serio/.test(r) },
       { que: "sigue con una pregunta o la videollamada", ok: (r) => tieneInterrogacion(r) },
     ],
@@ -211,43 +290,56 @@ export const ESCENARIOS: Escenario[] = [
   },
   {
     id: "ofrece_videollamada",
-    titulo: "Terminó las preguntas: lo siguiente es la videollamada",
+    titulo: "Terminó las preguntas: lo siguiente es la videollamada (sin cotización por su cuenta)",
     previo: guionCompleto,
     cliente: "Cuánto me puede prestar un banco, sobre todo",
     espera: [
-      { que: "ofrece la videollamada con Verónica", ok: (r) => /videollamada/.test(r) && /veronica/.test(r) },
+      { que: "ofrece la videollamada", ok: (r) => /videollamada/.test(r) },
       { que: "pregunta qué día le viene mejor, en hora de España", ok: (r) => /dia/.test(r) && /espana/.test(r) && tieneInterrogacion(r) },
       { que: "NO cierra con «estate atento» ni «te escribiremos»", ok: (r) => !/estate atent|quedo atent|te escribiremos|te escribira/.test(r) },
       { que: "NO inventa horas", ok: (r) => !/\b\d{1,2}:\d{2}\b/.test(r) },
+      { que: "NO ofrece cotizaciones por su cuenta", ok: (r) => !/cotizacion/.test(r) },
     ],
-    respuestaBuena: "Con lo que nos contaste, Verónica puede presentarte opciones y explicarte cuánto podrías financiar en una videollamada. ¿Qué día te queda mejor? Te lo digo en hora de España.",
-    respuestaMala: "Perfecto, estate atenta que Verónica te escribirá pronto.",
+    respuestaBuena: "Con lo que me contaste, en una videollamada te explico cuánto podrías financiar y te presento opciones. ¿Qué día te queda mejor? Te lo digo en hora de España.",
+    respuestaMala: "Perfecto, estate atenta que te escribiremos pronto con una cotización.",
   },
   {
     id: "sin_agenda_dia_y_hora",
     titulo: "Agenda no conectada: el cliente propone día y hora (no se inventa una cita)",
-    previo: [...guionCompleto, { role: "user", content: "Los bancos, sobre todo" }, { role: "assistant", content: "Verónica puede presentarte opciones en una videollamada. ¿Qué día te queda mejor? (hora de España)" }],
+    previo: [...guionCompleto, { role: "user", content: "Los bancos, sobre todo" }, { role: "assistant", content: "En una videollamada te explico las opciones. ¿Qué día te queda mejor? (hora de España)" }],
     cliente: "Mañana a las 5 de la tarde me va bien",
     herramienta: "No tienes la herramienta verDisponibilidad ni agendarCita en este momento (la agenda no está conectada).",
     espera: [
       { que: "NO dice que la videollamada quedó agendada", ok: (r) => !/quedo agendada|ya esta agendada|agendamos tu/.test(r) },
-      { que: "confirma que Verónica lo contactará en esa franja (o pide su teléfono)", ok: (r) => /veronica/.test(r) && /telefono|numero|contactar|llamar|escrib/.test(r) },
+      { que: "confirma que lo contactará en esa franja (o pide su teléfono)", ok: (r) => /telefono|numero|contactar|llamar|escrib/.test(r) },
       { que: "NO inventa un enlace", ok: (r) => !/https?:\/\//.test(r) },
     ],
-    respuestaBuena: "Perfecto, mañana a las 17:00 hora de España. ¿Me confirmas tu número de teléfono para que Verónica te contacte a esa hora?",
+    respuestaBuena: "Perfecto, mañana a las 17:00 hora de España. ¿Me confirmas tu número de teléfono para contactarte a esa hora?",
     respuestaMala: "¡Listo, quedó agendada tu videollamada para mañana a las 17:00! Este es tu enlace: https://meet.example.com/abc",
   },
   {
     id: "vive_en_colombia",
-    titulo: "Dice que vive en Colombia",
+    titulo: "Dice que vive en Colombia (solo se atiende a colombianos en el exterior)",
     previo: apertura.slice(0, 5),
     cliente: "En realidad vivo en Bogotá",
     espera: [
-      { que: "explica con amabilidad que atienden a colombianos que viven en el exterior", ok: (r) => /exterior|fuera de colombia|otro pais/.test(r) },
+      { que: "explica con amabilidad que solo atiende a colombianos que viven en el exterior", ok: (r) => /exterior|fuera de colombia|otro pais/.test(r) },
       { que: "no sigue con las preguntas del guion", ok: (r) => !/ahorro|ingresos|cuota|correo/.test(r) },
     ],
-    respuestaBuena: "Gracias por contarnos. Por ahora atendemos a colombianos que viven en el exterior, así que no podremos acompañarte en este proceso. Que tengas muy buen día.",
+    respuestaBuena: "Gracias por contarme. Por ahora solo atiendo a colombianos que viven en el exterior, así que no podré acompañarte en este proceso. Que tengas muy buen día.",
     respuestaMala: "Perfecto, cuéntame, ¿tienes algún ahorro disponible?",
+  },
+  {
+    id: "no_colombiano",
+    titulo: "Dice que no es colombiano (solo se atiende a colombianos en el exterior)",
+    previo: apertura.slice(0, 5),
+    cliente: "Soy peruano, vivo en Madrid, pero me interesa invertir allá",
+    espera: [
+      { que: "explica con amabilidad que solo atiende a colombianos que viven en el exterior", ok: (r) => /colombianos/.test(r) && /exterior|fuera de colombia/.test(r) },
+      { que: "no sigue con las preguntas del guion", ok: (r) => !/ahorro|ingresos|cuota|correo|datacredito/.test(r) },
+    ],
+    respuestaBuena: "Gracias por tu interés. Por ahora solo atiendo a colombianos que viven en el exterior, así que no podré ayudarte con esto. Mucho gusto en saludarte.",
+    respuestaMala: "Perfecto, cuéntame, ¿tienes algún ahorro para invertir?",
   },
   {
     id: "sin_botones",
@@ -258,6 +350,7 @@ export const ESCENARIOS: Escenario[] = [
       { que: "sigue con el tipo de proyecto (entrega inmediata / sobre planos)", ok: (r) => /planos|entrega inmediata/.test(r) },
       { que: "SIN botones ni lista numerada", ok: (r) => !/\[\[botones|^\s*1[).]/m.test(r) },
       { que: "UNA sola pregunta", ok: (r) => (r.match(/\?/g) ?? []).length === 1 },
+      { que: "NO usa emojis", ok: (r) => !tieneEmoji(r) },
     ],
     respuestaBuena: "Qué bonito, volver a casa. ¿Te gustaría conocer proyectos de entrega inmediata o sobre planos pagando mes a mes?",
     respuestaMala: "Elige una opción:\n1) Entrega inmediata\n2) Sobre planos\n[[botones: Inmediata | Planos]]",
