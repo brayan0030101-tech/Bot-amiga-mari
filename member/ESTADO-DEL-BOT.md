@@ -63,9 +63,9 @@ Todas las horas del bot (ventanas de mensajes 9–21 h, resumen 8:00, Excel 6:00
 - Fiabilidad del núcleo traída y adaptada a Zernio (detalle en `HISTORIAL-DEL-PROYECTO.md`). Lo desplegado sigue siendo la versión del 15 oct hasta que Brayan autorice desplegar.
 - Ajustes nuevos (D1, todos opcionales): `agenda_dias_bloqueados`, `bot_botones`.
 
-## Paso 2 (23 nov) — reglas del bot: borrador listo, NO guardado
-- Texto: `member/reglas-del-bot.txt`. Las reglas del bot viven en D1 (`settings.custom_instructions`); hoy esa clave está VACÍA en la base de Verónica y no se ha tocado.
-- Antes de guardarlas: aprobación de Brayan y correr las 14 conversaciones de prueba con la IA real (`src/followup/pruebasBot.ts`).
+## Paso 2 (23 nov) — reglas del bot (guardadas el 25 nov)
+- Texto: `member/reglas-del-bot.txt`. Las reglas del bot viven en D1 (`settings.custom_instructions`); guardadas en la base el 25 nov (ver al final de este documento).
+- (Hecho el 25 nov: aprobadas por Brayan, probadas con la IA real y guardadas.)
 - Código nuevo (sin desplegar): guardián de las reglas, conversaciones de prueba y campos nuevos de la ficha.
 - 25 nov: Brayan decidió sobre el borrador (habla Verónica, sin emojis, Datacrédito se pregunta, cotización solo si la pide, solo colombianos en el exterior). El borrador está actualizado y sigue SIN guardar. Detalle en `HISTORIAL-DEL-PROYECTO.md`.
 - Ojo para cuando se active el bot: la cotización que pida un cliente la prepara y envía una persona (no hay cotizador automático) y los clientes reportados que no pueden ponerse al día no reciben videollamada.
